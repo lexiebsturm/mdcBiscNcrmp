@@ -1,0 +1,64 @@
+---
+title: "mdcBiscNcrmp"
+author: "Lexie Sturm -- lexie.sturm@noaa.gov"
+date: "2024-08-12"
+output: html_document
+ theme: flatly
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+getwd()
+```
+
+```
+***
+
+# About this document
+***  
+All analyses were performed in R version 4.4.1. 
+This is the code that is examining NCRMP surveys within Miami-Dade County.
+***
+# Basic setup of R environment
+***
+## Loading required packages
+For the following analyses we will require the use of multiple different R packages, we can use the package *pacman* to quickly load them.
+```{r, loading required packages}
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load("paletteer", "patchwork", "tidyverse", "vegan",  "dplyr", "ncrmp.benthics.analysis", "ggplot2")
+
+```
+
+***
+# Case Study Request
+Biscayne National Park and Miami-Dade County would like to know how corals in regions compare to the rest of FL. They would like the following info to justify increasing the NCRMP survey effort by the staff in their regions.They are interested in data:
+1. For each year separately
+2. Pre-2015 years combined
+3. And post-2015 years combined:
+*What is the survey # in each (BISC + MDC, BISC) by year for NCRMP surveys, DRM surveys, and combined surveys?
+*What is the frequency of occurrence (FOI) in each for bleaching, and for disease?
+*What is the FOI for each ESA species by year?
+*For the top reef building species, what is the variance?
+*What is the change in coral cover by year (like the fig in the FL tech memo)
+***
+
+##Extract Required Data
+```{r, extract data}
+#Read in benthic data from SEFCRI:
+
+mdcBenthic14_22 <- bind_rows(
+  SEFCRI_2014_2stage_benthic_cover,
+  SEFCRI_2016_benthic_cover,
+  SEFCRI_2018_benthic_cover,
+  SEFCRI_2020_benthic_cover,
+  SEFCRI_2022_benthic_cover
+)%>%
+  filter(SUB_REGION_NAME == "Broward-Miami")%>%
+  filter(LAT_DEGREES < 25.97)
+
+```

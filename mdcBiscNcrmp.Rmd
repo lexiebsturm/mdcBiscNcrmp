@@ -30,7 +30,7 @@ For the following analyses we will require the use of multiple different R packa
 ```{r, loading required packages}
 
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load("paletteer", "patchwork", "tidyverse", "vegan",  "dplyr", "ncrmp.benthics.analysis", "ggplot2")
+pacman::p_load("paletteer", "patchwork", "tidyverse", "vegan",  "dplyr", "ncrmp.benthics.analysis", "ggplot2", "sf", "maps", "ggmap", "tigris")
 
 ```
 
@@ -49,16 +49,149 @@ Biscayne National Park and Miami-Dade County would like to know how corals in re
 
 ##Extract Required Data
 ```{r, extract data}
-#Read in benthic data from SEFCRI:
-
-mdcBenthic14_22 <- bind_rows(
-  SEFCRI_2014_2stage_benthic_cover,
-  SEFCRI_2016_benthic_cover,
-  SEFCRI_2018_benthic_cover,
-  SEFCRI_2020_benthic_cover,
-  SEFCRI_2022_benthic_cover
-)%>%
-  filter(SUB_REGION_NAME == "Broward-Miami")%>%
+#Read in benthic data and filter for desired area (MDC and BISC):
+#What about NCRMP_DWC_demo_All_regions_years, NCRMP_DWC_cover_All_regions_years?
+mdcBiscBenthic <- NCRMP_benthic_cover_All_regions_years %>%
+filter(SUB_REGION_NAME %in% c("Biscayne", "Broward-Miami")) %>%
   filter(LAT_DEGREES < 25.97)
+  
+  head(mdcBiscBenthic) 
+  
+mdcBiscDemo <- NCRMP_demo_All_regions_years %>%
+filter(SUB_REGION_NAME %in% c("Biscayne", "Broward-Miami")) %>%
+  filter(LAT_DEGREES < 25.97) 
+  
+head(mdcBiscDemo)  
+ 
+#Make a map to ensure I am getting the right surveys  
+
+# Load Florida counties shapefile
+fl_counties <- counties(state = "FL", year = 2021)
+
+# Filter for the specific South Florida counties
+south_florida_counties <- fl_counties %>%
+  filter(NAME %in% c("Miami-Dade", "Broward", "Palm Beach", "Monroe"))
+#Add state boundary
+fl_state <- states(year = 2021) %>%
+  filter(STUSPS == "FL")
+  
+# Calculate centroids for county labels
+centroids <- south_florida_counties %>%
+  st_centroid() %>%
+  st_coordinates() %>%
+  as.data.frame()
+
+# Add county names
+centroids$NAME <- south_florida_counties$NAME  
+  
+# Convert df to an sf object
+mdcBiscBenthic_sf <- st_as_sf(mdcBiscBenthic, coords = c("LON_DEGREES", "LAT_DEGREES"), crs = 4326)
+
+# Plot
+mdcBiscBenthicMap = ggplot() +
+# Add the outline of Florida
+geom_sf(data = fl_state, fill = NA, color = "black") +
+geom_sf(data = south_florida_counties, fill = NA, color = "black") +
+  geom_sf(data = mdcBiscBenthic_sf, color = "red", size = 3) +
+  geom_text(data = centroids, aes(x = X, y = Y, label = NAME), size = 3, color = "blue") +
+  labs(title = "NCRMP Surveys in MDC",
+       x = "Longitude",
+       y = "Latitude") +
+  theme_minimal()
+
+```
+
+***
+*What is the survey # in each (BISC + MDC, BISC) by year for NCRMP surveys, DRM surveys, and combined surveys?
+1. For each year separately
+2. Pre-2015 years combined
+3. And post-2015 years combined:
+
+```{r, number of surveys}
+
+# Calculate the number of unique LPI surveys per year
+mdcBiscBenthicSurveys <- mdcBiscBenthic %>%
+# Group by YEAR
+group_by(YEAR) %>%
+# Count unique combinations of PRIMARY_SAMPLE_UNIT and STATION_NR
+  summarise(num_surveys = n_distinct(paste(PRIMARY_SAMPLE_UNIT, STATION_NR, sep = "_")), .groups = 'drop')%>%
+  mutate(YEAR = as.character(YEAR))  # Ensure YEAR is character
+
+# View the results
+print(mdcBiscBenthicSurveys)
+
+# Calculate total surveys
+total_surveysBenthic <- mdcBiscBenthicSurveys %>%
+  summarise(YEAR = "Total", num_surveys = sum(num_surveys))%>%
+  mutate(YEAR = as.character(YEAR))  # Ensure YEAR is character
+
+# Calculate total surveys for 2015 and earlier
+total_surveys_before_2016Benthic <- mdcBiscBenthicSurveys %>%
+  filter(YEAR <= 2015) %>%
+  summarise(YEAR = "Total pre-2015", num_surveys = sum(num_surveys))%>%
+  mutate(YEAR = as.character(YEAR))  # Ensure YEAR is character
+
+# Calculate total surveys for 2016 and later
+total_surveys_from_2016Benthic <- mdcBiscBenthicSurveys %>%
+  filter(YEAR >= 2016) %>%
+  summarise(YEAR = "Total post-2015", num_surveys = sum(num_surveys))%>%
+  mutate(YEAR = as.character(YEAR))  # Ensure YEAR is character
+
+# Combine all results
+mdcBiscBenthicSurveysTotal <- bind_rows(mdcBiscBenthicSurveys, total_surveysBenthic, total_surveys_before_2016Benthic, total_surveys_from_2016Benthic)
+
+# Print the combined results
+mdcBiscBenthicSurveysTotal
+mdcBiscBenthicSurveysTotal <- mdcBiscBenthicSurveysTotal %>%
+  rename("lpiSurveys" = num_surveys)
+
+# Calculate the number of unique Demo surveys per year
+mdcBiscDemoSurveys <- mdcBiscDemo %>%
+# Group by YEAR
+group_by(YEAR) %>%
+# Count unique combinations of PRIMARY_SAMPLE_UNIT and STATION_NR
+  summarise(num_surveys = n_distinct(paste(PRIMARY_SAMPLE_UNIT, STATION_NR, sep = "_")), .groups = 'drop')%>%
+  mutate(YEAR = as.character(YEAR))  # Ensure YEAR is character
+
+# View the results
+print(mdcBiscDemoSurveys)
+
+# Calculate total surveys
+total_surveysDemo <- mdcBiscDemoSurveys %>%
+  summarise(YEAR = "Total", num_surveys = sum(num_surveys))%>%
+  mutate(YEAR = as.character(YEAR))  # Ensure YEAR is character
+
+# Calculate total surveys for 2015 and earlier
+total_surveys_before_2016Demo <- mdcBiscDemoSurveys %>%
+  filter(YEAR <= 2015) %>%
+  summarise(YEAR = "Total pre-2015", num_surveys = sum(num_surveys))%>%
+  mutate(YEAR = as.character(YEAR))  # Ensure YEAR is character
+
+# Calculate total surveys for 2016 and later
+total_surveys_from_2016Demo <- mdcBiscDemoSurveys %>%
+  filter(YEAR >= 2016) %>%
+  summarise(YEAR = "Total post-2015", num_surveys = sum(num_surveys))%>%
+  mutate(YEAR = as.character(YEAR))  # Ensure YEAR is character
+
+# Combine all results
+mdcBiscDemoSurveysTotal <- bind_rows(mdcBiscDemoSurveys, total_surveysDemo, total_surveys_before_2016Demo, total_surveys_from_2016Demo)
+
+# Print the combined results
+mdcBiscDemoSurveysTotal
+mdcBiscDemoSurveysTotal <- mdcBiscDemoSurveysTotal %>%
+  rename("demoSurveys" = num_surveys)
+
+# View the results
+print(mdcBiscDemoSurveysTotal)
+
+#Bind the columns together
+mdcBiscSurveyTotals <- mdcBiscBenthicSurveysTotal %>%
+  left_join(mdcBiscDemoSurveysTotal %>% 
+              select(YEAR, demoSurveys), 
+            by = "YEAR")
+            
+ mdcBiscSurveyTotals=as.data.frame(mdcBiscSurveyTotals)           
+
+#STILL NEED TO SEPARATE NCRMP FROM DRM
 
 ```

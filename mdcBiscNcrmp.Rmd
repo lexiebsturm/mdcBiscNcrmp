@@ -3,18 +3,12 @@ title: "mdcBiscNcrmp"
 author: "Lexie Sturm -- lexie.sturm@noaa.gov"
 date: "2024-08-12"
 output: html_document
- theme: flatly
-    toc: yes
-    toc_depth: 4
-    toc_float: yes
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 getwd()
-```
-
 ```
 ***
 
@@ -28,9 +22,8 @@ This is the code that is examining NCRMP surveys within Miami-Dade County.
 ## Loading required packages
 For the following analyses we will require the use of multiple different R packages, we can use the package *pacman* to quickly load them.
 ```{r, loading required packages}
-
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load("paletteer", "patchwork", "tidyverse", "vegan",  "dplyr", "ncrmp.benthics.analysis", "ggplot2", "sf", "maps", "ggmap", "tigris")
+pacman::p_load("paletteer", "patchwork", "tidyverse", "vegan",  "dplyr", "ncrmp.benthics.analysis", "ggplot2", "sf", "maps", "ggmap", "ggspatial", "tigris")
 
 ```
 
@@ -48,21 +41,98 @@ Biscayne National Park and Miami-Dade County would like to know how corals in re
 ***
 
 ##Extract Required Data
-```{r, extract data}
-#Read in benthic data and filter for desired area (MDC and BISC):
-#What about NCRMP_DWC_demo_All_regions_years, NCRMP_DWC_cover_All_regions_years?
-mdcBiscBenthic <- NCRMP_benthic_cover_All_regions_years %>%
+Need help with figuring out the best datasets to work with, see: C:\Users\Lexie.Sturm\Documents\ncrmp\ncrmp.benthics.analysis\data
+
+###Benthic
+```{r, extract benthic data}
+#Data dictionary:
+benthicDataDictionary = benthic_cover_categories
+
+#Benthic/LPI:
+#Which are the best datasets for these? Confirming that there would not be any DRM surveys with LPI data!!!
+allBenthic <- NCRMP_benthic_cover_All_regions_years
+unique(allBenthic$SURVEY)
+unique(allBenthic$YEAR)
+unique(allBenthic$SUB_REGION_NAME)
+#Benthic data from all regions (if LPI it must be an NCRMP survey right?) from 2014-2022
+```
+###Demo
+Pick one station per site for density, percent cover
+For FOI for bleaching/disease if bleaching or disease occured at any of the stations that's a 1
+```{r, extract Demo data}
+allNcrmpDemo <- NCRMP_demo_All_regions_years
+glimpse(allNcrmpDemo)
+unique(allNcrmpDemo$SURVEY)
+
+#There were quite a few NA values but I think these are all NCRMP surveys
+allNcrmpDemo$SURVEY[is.na(allNcrmpDemo$SURVEY)] <- "NCRMP"
+
+unique(allNcrmpDemo$YEAR)
+unique(allNcrmpDemo$SUB_REGION_NAME)
+#DEMO data from all regions with NCRMP and NA as survey types from 2014-2022.
+
+preNcrmpScreamDemo=preNCRMP_SCREAM_DRM_coral_demographics
+glimpse(preNcrmpScreamDemo)
+unique(preNcrmpScreamDemo$SURVEY)
+unique(preNcrmpScreamDemo$YEAR)
+unique(preNcrmpScreamDemo$SUB_REGION_NAME)
+#SCREAM and DRM coral demo data from 1999-2013 for all subregions, 
+
+drmSefcriDemo1422=DRM_SEFCRI_2014_2022_2stage_coral_demographics
+glimpse(drmSefcriDemo1422)
+unique(drmSefcriDemo1422$SURVEY)
+unique(drmSefcriDemo1422$YEAR)
+unique(drmSefcriDemo1422$SUB_REGION_NAME)
+#unique(drmSefcriDemo1422$PRIMARY_SAMPLE_UNIT)
+drmSefcriDemo1422$SURVEY <- "DRM"
+
+#Are these survey sites already included in allNcrmpDemo?
+#Convert both columns to characters
+# drmSefcriDemo1422$PRIMARY_SAMPLE_UNIT <- as.character(drmSefcriDemo1422$PRIMARY_SAMPLE_UNIT)
+# allNcrmpDemo$PRIMARY_SAMPLE_UNIT <- as.character(allNcrmpDemo$PRIMARY_SAMPLE_UNIT)
+# 
+# common_df <- drmSefcriDemo1422 %>%
+#   semi_join(allNcrmpDemo, by = "PRIMARY_SAMPLE_UNIT") %>%
+#   pull(PRIMARY_SAMPLE_UNIT)
+# print(common_df)
+# 
+# commonSites <- inner_join(drmSefcriDemo1422, allNcrmpDemo, by = "PRIMARY_SAMPLE_UNIT", relationship = "many-to-many")
+# 
+# # Use anti_join to find rows in drmSefcriDemo1422 that are not in allNcrmpDemo
+# not_in_allNcrmpDemo_df <- drmSefcriDemo1422 %>%
+#   anti_join(allNcrmpDemo, by = "PRIMARY_SAMPLE_UNIT") %>%
+#   pull(PRIMARY_SAMPLE_UNIT)
+# # Filter drmSefcriDemo1422 to include only rows with values in not_in_allNcrmpDemo_df
+# filtered_df <- drmSefcriDemo1422 %>%
+#   filter(PRIMARY_SAMPLE_UNIT %in% not_in_allNcrmpDemo_df)
+# unique(filtered_df$SUB_REGION_NAME)
+
+#So it seems like there is some overlap but not complete overlap between the two datasets!!
+
+#Also should I be using 1stage or 2 stage???
+#DRM_SEFCRI_2014_2022_1stage_coral_demographics
+
+drmFlkDemo1422 = DRM_FLK_2014_2022_2stage_coral_demographics
+glimpse(drmFlkDemo1422)
+unique(drmFlkDemo1422$SURVEY)
+unique(drmFlkDemo1422$YEAR)
+unique(drmFlkDemo1422$SUB_REGION_NAME)
+#unique(drmFlkDemo1422$PRIMARY_SAMPLE_UNIT)
+drmFlkDemo1422$SURVEY <- "DRM"
+#DRM_FLK_2014_2022_1stage_coral_demographics
+
+```
+
+##Filter the data
+###Benthic
+```{r, filter benthic data}
+#Need to join together the correct datasets and filter for the area of interest
+#For benthic just need to filter this dataset?
+mdcBiscBenthic <- allBenthic %>%
 filter(SUB_REGION_NAME %in% c("Biscayne", "Broward-Miami")) %>%
   filter(LAT_DEGREES < 25.97)
-  
   head(mdcBiscBenthic) 
-  
-mdcBiscDemo <- NCRMP_demo_All_regions_years %>%
-filter(SUB_REGION_NAME %in% c("Biscayne", "Broward-Miami")) %>%
-  filter(LAT_DEGREES < 25.97) 
-  
-head(mdcBiscDemo)  
- 
+
 #Make a map to ensure I am getting the right surveys  
 
 # Load Florida counties shapefile
@@ -87,38 +157,188 @@ centroids$NAME <- south_florida_counties$NAME
 # Convert df to an sf object
 mdcBiscBenthic_sf <- st_as_sf(mdcBiscBenthic, coords = c("LON_DEGREES", "LAT_DEGREES"), crs = 4326)
 
+#Read in BNP shapefile
+biscayne_park <- st_read("./data/WDPA_WDOECM_Aug2024_Public_1024_shp_0/WDPA_WDOECM_Aug2024_Public_1024_shp-polygons.shp")
+
 # Plot
 mdcBiscBenthicMap = ggplot() +
 # Add the outline of Florida
 geom_sf(data = fl_state, fill = NA, color = "black") +
 geom_sf(data = south_florida_counties, fill = NA, color = "black") +
-  geom_sf(data = mdcBiscBenthic_sf, color = "red", size = 3) +
+  geom_sf(data = mdcBiscBenthic_sf, aes(color = "Survey Sites"), size = 3) +
+  geom_sf(data = biscayne_park, fill = NA, color = "green", size = 1.5, aes(linetype = "Biscayne National Park")) +  # Outline of Biscayne National Park
   geom_text(data = centroids, aes(x = X, y = Y, label = NAME), size = 3, color = "blue") +
-  labs(title = "NCRMP Surveys in MDC",
+  labs(title = "NCRMP LPI Surveys in Miami-Dade County & Biscayne National Park",
        x = "Longitude",
        y = "Latitude") +
-  theme_minimal()
+   coord_sf(xlim = c(-84, -79), ylim = c(24, 27), expand = FALSE) +  # Set the bounding box for the map
+  annotation_scale(location = "bl") +
+    annotation_north_arrow(location = "tl",  # Place north arrow in the top-left corner
+                         which_north = "true",
+                         pad_x = unit(0.5, "in"),
+                         pad_y = unit(0.5, "in"))+
+ scale_color_manual(name = "Legend", values = c("Survey Sites" = "red"),
+                     labels = c("Survey Sites")) +
+  scale_linetype_manual(name = "Legend", values = c("Biscayne National Park" = 1),
+                        labels = c("Biscayne National Park")) +
+  theme_minimal() +
+  theme(
+    legend.position = c(0.83, 0.15), 
+    legend.title = element_blank()# Position legend in the bottom-right corner
+    #legend.justification = c("right", "bottom"), # Justify legend to the bottom-right corner
+    #legend.box.margin = margin(10, 10, 10, 10) # Add margin around the legend box
+  )
+
+
+mdcBiscBenthicMap
+```
+###Demo
+```{r, filter demo data}
+#Can I join allNcrmpDemo, preNcrmpScreamDemo, drmSefcriDemo1422, drmFlkDemo1422? Let's look at their column names:
+cols_allNcrmpDemo = names(allNcrmpDemo)
+if (!is.character(cols_allNcrmpDemo)) cols_allNcrmpDemo <- as.character(cols_allNcrmpDemo)
+
+cols_preNcrmpScreamDemo = names(preNcrmpScreamDemo)
+if (!is.character(cols_preNcrmpScreamDemo)) cols_preNcrmpScreamDemo <- as.character(cols_preNcrmpScreamDemo)
+
+cols_drmSefcriDemo1422 = names(drmSefcriDemo1422)
+if (!is.character(cols_drmSefcriDemo1422)) cols_drmSefcriDemo1422 <- 
+as.character(cols_drmSefcriDemo1422)
+
+cols_drmFlkDemo1422 = names(drmFlkDemo1422)
+if (!is.character(cols_drmFlkDemo1422)) cols_drmFlkDemo1422 <- 
+  as.character(cols_drmFlkDemo1422)
+
+#What data columns do they have in common?
+common_cols <- Reduce(intersect, list(cols_allNcrmpDemo, cols_preNcrmpScreamDemo, cols_drmSefcriDemo1422, cols_drmFlkDemo1422))
+common_cols
+
+#Filter out all but the columns in common
+allNcrmpDemo_common <- allNcrmpDemo %>% select(all_of(common_cols))
+preNcrmpScreamDemo_common <- preNcrmpScreamDemo %>% select(all_of(common_cols))
+drmSefcriDemo1422_common <- drmSefcriDemo1422 %>% select(all_of(common_cols))
+drmFlkDemo1422_common <- drmFlkDemo1422 %>% select(all_of(common_cols))
+
+str(allNcrmpDemo_common)
+allNcrmpDemo_common$PRIMARY_SAMPLE_UNIT <- as.character(allNcrmpDemo_common$PRIMARY_SAMPLE_UNIT)
+allNcrmpDemo_common$MAPGRID_NR <- as.integer(allNcrmpDemo_common$MAPGRID_NR)
+
+str(preNcrmpScreamDemo_common)
+str(drmSefcriDemo1422_common)
+str(drmFlkDemo1422_common)
+
+#Combine dataframes by their common columns:
+allDemo <- bind_rows(allNcrmpDemo_common, preNcrmpScreamDemo_common, drmSefcriDemo1422_common, drmFlkDemo1422_common)
+unique(allDemo$SUB_REGION_NAME)
+unique(allDemo$SURVEY)
+
+#Filter the demo data to just Biscayne and Broward-Miami
+mdcBiscDemo <- allDemo %>%
+  mutate(SurveyCode = paste(YEAR, MONTH, DAY, PRIMARY_SAMPLE_UNIT, sep = "-")) %>%
+  mutate(MilSortCode = paste(YEAR, MONTH, DAY, PRIMARY_SAMPLE_UNIT, STATION_NR, sep = "-")) %>%
+filter(SUB_REGION_NAME %in% c("Biscayne", "Broward-Miami")) %>%
+  filter(LAT_DEGREES < 25.97) %>%
+  mutate(
+    LAT_DEGREES = round(LAT_DEGREES, 5),
+    LON_DEGREES = round(LON_DEGREES, 5)
+  ) %>%
+  arrange(YEAR, MONTH, DAY, REGION, MilSortCode) 
+
+#write.csv(mdcBiscDemo, file = "./data/mdcBiscDemoAllData.csv", row.names = FALSE)
+
+mdcBiscDemoSurveys <- mdcBiscDemo  %>%
+  #Can remove all the actual demo data
+  select(-RUGOSITY_CD, -WTD_RUG, -SPECIES_CD, -SPECIES_NAME, -N, -JUV, -MAX_DIAMETER, -PERP_DIAMETER, -HEIGHT, -OLD_MORT, -RECENT_MORT, -BLEACH_CONDITION, -DISEASE)%>%
+  distinct(SurveyCode, .keep_all = TRUE)
+
+#distinct(YEAR, MONTH, DAY, SURVEY, LAT_DEGREES, LON_DEGREES, SURVEY_ID, .keep_all = TRUE)  
+#distinct(REGION,PRIMARY_SAMPLE_UNIT,STATION_NR,YEAR,MONTH,DAY,HABITAT_CD,STRAT,MAPGRID_NR,SUB_REGION_NAME,SUB_REGION_NR,ZONE_NAME,ZONE_NR,MPA_NAME,MPA_NR,ADMIN,PROT,DEPTH_STRAT,MIN_DEPTH,MAX_DEPTH,METERS_COMPLETED,SURVEY, LAT_DEGREES, LON_DEGREES, SURVEY_ID)
+
+#write.csv(mdcBiscDemoSurveys, file = "./data/mdcBiscDemoSurveys.csv", row.names = FALSE)
+
+# region_survey_summary <- allDemo %>%
+#   group_by(SUB_REGION_NAME) %>%
+#   summarize(SURVEY_TYPES = list(unique(SURVEY)), .groups = 'drop')
+# 
+# mdcBisc_survey_summary <- mdcBiscDemoSurveys %>%
+#   group_by(SUB_REGION_NAME) %>%
+#   summarize(SURVEY_TYPES = list(unique(SURVEY)), .groups = 'drop')
+
+#Make a map of the demo surveys
+# Load Florida counties shapefile
+fl_counties <- counties(state = "FL", year = 2021)
+
+# Filter for the specific South Florida counties
+south_florida_counties <- fl_counties %>%
+  filter(NAME %in% c("Miami-Dade", "Broward", "Palm Beach", "Monroe"))
+#Add state boundary
+fl_state <- states(year = 2021) %>%
+  filter(STUSPS == "FL")
+  
+# Calculate centroids for county labels
+centroids <- south_florida_counties %>%
+  st_centroid() %>%
+  st_coordinates() %>%
+  as.data.frame()
+
+# Add county names
+centroids$NAME <- south_florida_counties$NAME  
+  
+# Convert df to an sf object
+mdcBiscDemoSurveys_sf <- st_as_sf(mdcBiscDemoSurveys, coords = c("LON_DEGREES", "LAT_DEGREES"), crs = 4326)
+
+#Read in BNP shapefile
+biscayne_park <- st_read("./data/WDPA_WDOECM_Aug2024_Public_1024_shp_0/WDPA_WDOECM_Aug2024_Public_1024_shp-polygons.shp")
+
+mdcBiscDemoSurveysMap = ggplot() +
+# Add the outline of Florida
+geom_sf(data = fl_state, fill = NA, color = "black") +
+geom_sf(data = south_florida_counties, fill = NA, color = "black") +
+  geom_sf(data = mdcBiscDemoSurveys_sf, aes(color = SURVEY), size = 3) +
+  geom_text(data = centroids, aes(x = X, y = Y, label = NAME), size = 3, color = "blue") +
+  geom_sf(data = biscayne_park, fill = NA, color = "green", size = 1.5, aes(linetype = "Biscayne National Park")) +  # Outline of Biscayne National Park
+  labs(title = "Coral Demographic Surveys in MDC & BNP",
+       x = "Longitude",
+       y = "Latitude",
+       color = "Survey Type") +
+   coord_sf(xlim = c(-84, -79), ylim = c(24, 27), expand = FALSE) +  # Set the bounding box for the map
+  annotation_scale(location = "bl") +
+    annotation_north_arrow(location = "tl",  # Place north arrow in the top-left corner
+                         which_north = "true",
+                         pad_x = unit(0.5, "in"),
+                         pad_y = unit(0.5, "in"))+
+ scale_color_manual(values = c("DRM" = "yellow", 
+                                "NCRMP" = "red", 
+                                "SCREAM" = "purple"))+
+  theme_minimal() +
+   theme(
+    legend.position = c(0.85, 0.17), 
+    legend.title = element_blank(),
+    legend.spacing.y = unit(0.0, "cm")# Position legend in the bottom-right corner
+    #legend.justification = c("right", "bottom"), # Justify legend to the bottom-right corner
+    #legend.box.margin = margin(10, 10, 10, 10) # Add margin around the legend box
+  )
+mdcBiscDemoSurveysMap
 
 ```
-
+##Number of Surveys
 ***
 *What is the survey # in each (BISC + MDC, BISC) by year for NCRMP surveys, DRM surveys, and combined surveys?
 1. For each year separately
 2. Pre-2015 years combined
 3. And post-2015 years combined:
-
-```{r, number of surveys}
-
+###Benthic
+```{r, number of benthic surveys}
 # Calculate the number of unique LPI surveys per year
 mdcBiscBenthicSurveys <- mdcBiscBenthic %>%
 # Group by YEAR
 group_by(YEAR) %>%
-# Count unique combinations of PRIMARY_SAMPLE_UNIT and STATION_NR
-  summarise(num_surveys = n_distinct(paste(PRIMARY_SAMPLE_UNIT, STATION_NR, sep = "_")), .groups = 'drop')%>%
+ group_by(YEAR) %>%                     # Group by year
+  summarize(num_surveys = n_distinct(PRIMARY_SAMPLE_UNIT)) %>%  # Count unique PRIMARY_SAMPLE_UNIT   
   mutate(YEAR = as.character(YEAR))  # Ensure YEAR is character
 
 # View the results
-print(mdcBiscBenthicSurveys)
+mdcBiscBenthicSurveys
 
 # Calculate total surveys
 total_surveysBenthic <- mdcBiscBenthicSurveys %>%
@@ -144,54 +364,501 @@ mdcBiscBenthicSurveysTotal <- bind_rows(mdcBiscBenthicSurveys, total_surveysBent
 mdcBiscBenthicSurveysTotal
 mdcBiscBenthicSurveysTotal <- mdcBiscBenthicSurveysTotal %>%
   rename("lpiSurveys" = num_surveys)
+mdcBiscBenthicSurveysTotal
 
+```
+###Demo
+```{r, number of demo surveys}
 # Calculate the number of unique Demo surveys per year
-mdcBiscDemoSurveys <- mdcBiscDemo %>%
+mdcBiscDemoSurveyCounts <- mdcBiscDemoSurveys %>%
 # Group by YEAR
-group_by(YEAR) %>%
+group_by(YEAR, SURVEY) %>%
 # Count unique combinations of PRIMARY_SAMPLE_UNIT and STATION_NR
-  summarise(num_surveys = n_distinct(paste(PRIMARY_SAMPLE_UNIT, STATION_NR, sep = "_")), .groups = 'drop')%>%
-  mutate(YEAR = as.character(YEAR))  # Ensure YEAR is character
+summarize(Count = n(), .groups = "drop") %>%
+pivot_wider(names_from = SURVEY, values_from = Count, values_fill = list(Count = 0)) %>%
+  mutate(Total_Surveys = rowSums(select(., starts_with("SCREAM"):starts_with("DRM")), na.rm = TRUE))
 
-# View the results
-print(mdcBiscDemoSurveys)
+# Add total rows for 2015 and earlier, 2016 and later, and overall
+totals_df <- mdcBiscDemoSurveys %>%
+  mutate(Period = if_else(YEAR <= 2015, "2015 and earlier", "2016 and later")) %>%
+  group_by(Period, SURVEY) %>%
+  summarize(Count = n(), .groups = "drop") %>%
+  pivot_wider(names_from = SURVEY, values_from = Count, values_fill = list(Count = 0)) %>%
+  mutate(Total_Surveys = rowSums(across(c(SCREAM, NCRMP, DRM)), na.rm = TRUE)) %>%
+  bind_rows(
+    mdcBiscDemoSurveys %>%
+      group_by(SURVEY) %>%
+      summarize(Count = n(), .groups = "drop") %>%
+      pivot_wider(names_from = SURVEY, values_from = Count, values_fill = list(Count = 0)) %>%
+      mutate(Period = "Overall", Total_Surveys = rowSums(across(c(SCREAM, NCRMP, DRM)), na.rm = TRUE))
+  ) %>%
+  select(YEAR = Period, everything())
 
-# Calculate total surveys
-total_surveysDemo <- mdcBiscDemoSurveys %>%
-  summarise(YEAR = "Total", num_surveys = sum(num_surveys))%>%
-  mutate(YEAR = as.character(YEAR))  # Ensure YEAR is character
+# Combine original summary with totals
+# Convert YEAR to character in mdcBiscDemoSurveys
+mdcBiscDemoSurveyCounts <- mdcBiscDemoSurveyCounts %>%
+  mutate(YEAR = as.character(YEAR))
 
-# Calculate total surveys for 2015 and earlier
-total_surveys_before_2016Demo <- mdcBiscDemoSurveys %>%
-  filter(YEAR <= 2015) %>%
-  summarise(YEAR = "Total pre-2015", num_surveys = sum(num_surveys))%>%
-  mutate(YEAR = as.character(YEAR))  # Ensure YEAR is character
+# Convert YEAR to character in totals_df
+totals_df <- totals_df %>%
+  mutate(YEAR = as.character(YEAR))
 
-# Calculate total surveys for 2016 and later
-total_surveys_from_2016Demo <- mdcBiscDemoSurveys %>%
-  filter(YEAR >= 2016) %>%
-  summarise(YEAR = "Total post-2015", num_surveys = sum(num_surveys))%>%
-  mutate(YEAR = as.character(YEAR))  # Ensure YEAR is character
+mdcBiscDemoSurveyCounts <- bind_rows(mdcBiscDemoSurveyCounts, totals_df)
+mdcBiscDemoSurveyCounts
+```
 
-# Combine all results
-mdcBiscDemoSurveysTotal <- bind_rows(mdcBiscDemoSurveys, total_surveysDemo, total_surveys_before_2016Demo, total_surveys_from_2016Demo)
+##FOI in each (survey type/year?) for bleaching and for disease?
+###FOI Bleaching
+```{r, FOI bleaching Table}
+#FOI Bleaching Table
+mdcBiscDemo <- allDemo %>%
+  mutate(SurveyCode = paste(YEAR, MONTH, DAY, PRIMARY_SAMPLE_UNIT, sep = "-")) %>%
+  mutate(MilSortCode = paste(YEAR, MONTH, DAY, PRIMARY_SAMPLE_UNIT, STATION_NR, sep = "-")) %>%
+filter(SUB_REGION_NAME %in% c("Biscayne", "Broward-Miami")) %>%
+  filter(LAT_DEGREES < 25.97) %>%
+  mutate(
+    LAT_DEGREES = round(LAT_DEGREES, 5),
+    LON_DEGREES = round(LON_DEGREES, 5)
+  ) %>%
+  arrange(YEAR, MONTH, DAY, REGION, MilSortCode) 
 
-# Print the combined results
-mdcBiscDemoSurveysTotal
-mdcBiscDemoSurveysTotal <- mdcBiscDemoSurveysTotal %>%
-  rename("demoSurveys" = num_surveys)
+num_unique_MilSortCode <- length(unique(mdcBiscDemo$MilSortCode))
+num_unique_SurveyCode <- length(unique(mdcBiscDemo$SurveyCode))
+unique(mdcBiscDemo$BLEACH_CONDITION)
 
-# View the results
-print(mdcBiscDemoSurveysTotal)
+# mdcBiscDemo <- mdcBiscDemo %>%
+#   group_by(MilSortCode) %>%
+#   mutate(BleachingPresAbs = if_else(any(BLEACH_CONDITION %in% c("P", "PL", "T", "B", "PB")), 1, 0))
 
-#Bind the columns together
-mdcBiscSurveyTotals <- mdcBiscBenthicSurveysTotal %>%
-  left_join(mdcBiscDemoSurveysTotal %>% 
-              select(YEAR, demoSurveys), 
-            by = "YEAR")
-            
- mdcBiscSurveyTotals=as.data.frame(mdcBiscSurveyTotals)           
+mdcBiscDemo <- mdcBiscDemo %>%
+  group_by(SurveyCode) %>%
+  mutate(BleachingPresAbs = if_else(any(BLEACH_CONDITION %in% c("P", "PL", "T", "B", "PB")), 1, 0))
 
-#STILL NEED TO SEPARATE NCRMP FROM DRM
+#write.csv(mdcBiscDemo, "./data/bleachingTransectCheck.csv")
+
+mdcBiscDemoBleachingSurveys <- mdcBiscDemo %>%
+distinct(SurveyCode, .keep_all = TRUE)
+
+#write.csv(mdcBiscDemoBleachingSurveys, "./data/bleachingSiteCheck.csv")
+
+mdcBiscBleachingSummary <- mdcBiscDemoBleachingSurveys %>%
+  group_by(YEAR) %>%
+  summarise(
+    total_surveys = n(),
+    bleaching_present = sum(BleachingPresAbs),
+    proportion_bleaching_present = round(bleaching_present / total_surveys, 2
+  ))%>%
+  mutate(YEAR = as.character(YEAR))
+
+# Calculate the totals
+total_summary <- mdcBiscBleachingSummary %>%
+  summarise(
+    YEAR = "Total",  # Use a placeholder for the year
+    total_surveys = sum(total_surveys),
+    bleaching_present = sum(bleaching_present),
+    proportion_bleaching_present = round(sum(bleaching_present) / sum(total_surveys), 2)
+  )%>%
+  mutate(YEAR = as.character(YEAR))
+
+# Append the total row to the existing summary table
+mdcBiscBleachingSummary <- bind_rows(mdcBiscBleachingSummary, total_summary)
+
+# Print the summary table
+mdcBiscBleachingSummary
+```
+
+```{r, FOI bleaching chart}
+# Summarize the data to include counts of surveys with and without bleaching
+mdcBiscBleachingSummary_stacked <- mdcBiscDemoBleachingSurveys %>%
+  group_by(YEAR) %>%
+  summarise(
+    total_surveys = n(),
+    surveys_with_bleaching = sum(BleachingPresAbs),
+    surveys_without_bleaching = total_surveys - surveys_with_bleaching
+  ) %>%
+  mutate(YEAR = as.character(YEAR))
+
+# Pivot data to long format for stacking
+mdcBiscBleachingLong <- mdcBiscBleachingSummary_stacked %>%
+  pivot_longer(cols = c(surveys_with_bleaching, surveys_without_bleaching),
+               names_to = "BleachingStatus",
+               values_to = "Count") %>%
+  # Explicitly set factor levels to ensure correct stacking order
+  mutate(BleachingStatus = factor(BleachingStatus, 
+                                  levels = c("surveys_with_bleaching", "surveys_without_bleaching")))
+
+# Print the long format data for verification
+print(mdcBiscBleachingLong)
+
+# Create the stacked bar chart
+mdcBiscBleachingChart <- ggplot(mdcBiscBleachingLong[order(mdcBiscBleachingLong$BleachingStatus,decreasing=F),], aes(x = YEAR, y = Count, fill = BleachingStatus)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Number of Surveys with and without Coral Bleaching Incidents by Year",
+       x = "Year",
+       y = "Number of Surveys",
+       fill = "Bleaching Status") +
+  scale_fill_manual(values = c("surveys_with_bleaching" = "darkred", 
+                                "surveys_without_bleaching" = "lightgray")) +
+  theme_minimal()
+
+# Print the chart
+print(mdcBiscBleachingChart)
+
+################################################################################
+# Summarize the data to include proportions of surveys with and without bleaching
+mdcBiscBleachingProportions <- mdcBiscDemoBleachingSurveys %>%
+  group_by(YEAR) %>%
+  summarise(
+    total_surveys = n(),
+    surveys_with_bleaching = sum(BleachingPresAbs),
+    surveys_without_bleaching = total_surveys - surveys_with_bleaching
+  ) %>%
+  mutate(
+    proportion_with_bleaching = surveys_with_bleaching / total_surveys,
+    proportion_without_bleaching = surveys_without_bleaching / total_surveys
+  ) %>%
+  select(YEAR, proportion_with_bleaching, proportion_without_bleaching) %>%
+  mutate(YEAR = as.character(YEAR))
+
+# Print the summary table for verification
+print(mdcBiscBleachingProportions)
+
+# Pivot data to long format for stacking proportional data
+mdcBiscBleachingLongProportions <- mdcBiscBleachingProportions %>%
+  pivot_longer(cols = c(proportion_with_bleaching, proportion_without_bleaching),
+               names_to = "BleachingStatus",
+               values_to = "Proportion") %>%
+  # Explicitly set factor levels to ensure correct stacking order
+  mutate(BleachingStatus = factor(BleachingStatus, 
+                                  levels = c("proportion_with_bleaching", "proportion_without_bleaching")))
+
+# Print the long format data for verification
+print(mdcBiscBleachingLongProportions)
+
+mdcBiscBleachingProportionsChart <- ggplot(mdcBiscBleachingLongProportions, aes(x = YEAR, y = Proportion, fill = BleachingStatus)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Proportion of Surveys with and without Coral Bleaching Incidents by Year",
+       x = "Year",
+       y = "Proportion of Surveys",
+       fill = "Bleaching Status") +
+  scale_fill_manual(values = c("proportion_with_bleaching" = "darkred", "proportion_without_bleaching" = "lightgray")) +
+  theme_minimal()
+
+```
+###FOI Disease
+```{r, FOI disease by year}
+mdcBiscDemo <- allDemo %>%
+  mutate(SurveyCode = paste(YEAR, MONTH, DAY, PRIMARY_SAMPLE_UNIT, sep = "-")) %>%
+  mutate(MilSortCode = paste(YEAR, MONTH, DAY, PRIMARY_SAMPLE_UNIT, STATION_NR, sep = "-")) %>%
+filter(SUB_REGION_NAME %in% c("Biscayne", "Broward-Miami")) %>%
+  filter(LAT_DEGREES < 25.97) %>%
+  mutate(
+    LAT_DEGREES = round(LAT_DEGREES, 5),
+    LON_DEGREES = round(LON_DEGREES, 5)
+  ) %>%
+  arrange(YEAR, MONTH, DAY, REGION, MilSortCode) 
+
+unique(mdcBiscDemo$DISEASE)
+
+mdcBiscDemo <- mdcBiscDemo %>%
+  group_by(SurveyCode) %>%
+  mutate(diseasePresAbs = if_else(any(DISEASE %in% c("P")), 1, 0))
+
+mdcBiscDemoDiseaseSurveys <- mdcBiscDemo %>%
+distinct(SurveyCode, .keep_all = TRUE)
+
+mdcBiscDiseaseSummary <- mdcBiscDemoDiseaseSurveys %>%
+  group_by(YEAR) %>%
+  summarise(
+    total_surveys = n(),
+    disease_present = sum(diseasePresAbs),
+    proportion_disease_present = round(disease_present / total_surveys, 2
+  )) %>%
+  mutate(YEAR = as.character(YEAR))
+
+# Calculate the totals
+total_disease_summary <- mdcBiscDiseaseSummary %>%
+  summarise(
+    YEAR = "Total",  # Use a placeholder for the year
+    total_surveys = sum(total_surveys),
+    disease_present = sum(disease_present),
+    proportion_disease_present = round(sum(disease_present) / sum(total_surveys), 2)
+  )%>%
+  mutate(YEAR = as.character(YEAR))
+
+# Append the total row to the existing summary table
+mdcBiscDiseaseSummary <- bind_rows(mdcBiscDiseaseSummary, total_disease_summary)
+
+# Print the summary table
+mdcBiscDiseaseSummary
+```
+
+```{r, FOI disease chart by year}
+#Chart
+# Data preparation
+mdcBiscDemo <- allDemo %>%
+  mutate(SurveyCode = paste(YEAR, MONTH, DAY, PRIMARY_SAMPLE_UNIT, sep = "-")) %>%
+  mutate(MilSortCode = paste(YEAR, MONTH, DAY, PRIMARY_SAMPLE_UNIT, STATION_NR, sep = "-")) %>%
+  filter(SUB_REGION_NAME %in% c("Biscayne", "Broward-Miami")) %>%
+  filter(LAT_DEGREES < 25.97) %>%
+  mutate(
+    LAT_DEGREES = round(LAT_DEGREES, 5),
+    LON_DEGREES = round(LON_DEGREES, 5)
+  ) %>%
+  arrange(YEAR, MONTH, DAY, REGION, MilSortCode) 
+
+mdcBiscDemo <- mdcBiscDemo %>%
+  group_by(SurveyCode) %>%
+  mutate(diseasePresAbs = if_else(any(DISEASE %in% c("P")), 1, 0))
+
+mdcBiscDemoDiseaseSurveys <- mdcBiscDemo %>%
+  distinct(SurveyCode, .keep_all = TRUE)
+
+# Summarize data for total surveys
+mdcBiscDiseaseSummary <- mdcBiscDemoDiseaseSurveys %>%
+  group_by(YEAR) %>%
+  summarise(
+    total_surveys = n(),
+    disease_present = sum(diseasePresAbs),
+    disease_absent = total_surveys - disease_present
+  ) %>%
+  mutate(YEAR = as.character(YEAR))
+
+# Remove the total row if it exists
+mdcBiscDiseaseSummary_no_total <- mdcBiscDiseaseSummary %>%
+  filter(YEAR != "Total")
+
+# Pivot data to long format for total surveys plot
+mdcBiscDiseaseLong <- mdcBiscDiseaseSummary_no_total %>%
+  pivot_longer(cols = c(disease_present, disease_absent),
+               names_to = "DiseaseStatus",
+               values_to = "Count") %>%
+  mutate(DiseaseStatus = factor(DiseaseStatus, 
+                                levels = c("disease_present", "disease_absent")))
+
+# Calculate proportions
+mdcBiscDiseaseProportions <- mdcBiscDiseaseSummary_no_total %>%
+  mutate(
+    proportion_disease_present = round(disease_present / total_surveys, 2),
+    proportion_disease_absent = 1 - proportion_disease_present
+  ) %>%
+  select(YEAR, proportion_disease_present, proportion_disease_absent) %>%
+  pivot_longer(cols = c(proportion_disease_present, proportion_disease_absent),
+               names_to = "DiseaseStatus",
+               values_to = "Proportion") %>%
+  mutate(DiseaseStatus = factor(DiseaseStatus, 
+                                levels = c("proportion_disease_present", "proportion_disease_absent")))
+
+# Print data for verification
+print(mdcBiscDiseaseLong)
+print(mdcBiscDiseaseProportions)
+
+# Create the stacked bar chart for total surveys
+mdcBiscDiseaseTotalChart <- ggplot(mdcBiscDiseaseLong, aes(x = YEAR, y = Count, fill = DiseaseStatus)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Total Surveys with and without Disease by Year",
+       x = "Year",
+       y = "Number of Surveys",
+       fill = "Disease Status") +
+  scale_fill_manual(values = c("disease_present" = "darkred", 
+                                "disease_absent" = "lightgray")) +
+  theme_minimal()
+
+# Print the total surveys chart
+print(mdcBiscDiseaseTotalChart)
+
+# Create the stacked bar chart for proportional data
+mdcBiscDiseaseProportionChart <- ggplot(mdcBiscDiseaseProportions, aes(x = YEAR, y = Proportion, fill = DiseaseStatus)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Proportion of Surveys with and without Disease by Year",
+       x = "Year",
+       y = "Proportion of Surveys",
+       fill = "Disease Status") +
+  scale_fill_manual(values = c("proportion_disease_present" = "darkred", 
+                                "proportion_disease_absent" = "lightgray")) +
+  theme_minimal()
+
+# Print the proportional data chart
+print(mdcBiscDiseaseProportionChart)
+
+```
+
+##What is the FOI for each ESA species by year?
+```{r, FOI ESA spp. by year}
+mdcBiscDemo <- allDemo %>%
+  mutate(SurveyCode = paste(YEAR, MONTH, DAY, PRIMARY_SAMPLE_UNIT, sep = "-")) %>%
+  mutate(MilSortCode = paste(YEAR, MONTH, DAY, PRIMARY_SAMPLE_UNIT, STATION_NR, sep = "-")) %>%
+filter(SUB_REGION_NAME %in% c("Biscayne", "Broward-Miami")) %>%
+  filter(LAT_DEGREES < 25.97) %>%
+  mutate(
+    LAT_DEGREES = round(LAT_DEGREES, 5),
+    LON_DEGREES = round(LON_DEGREES, 5)
+  ) %>%
+   mutate(SPECIES_CD = if_else(SPECIES_CD == "ORB ANCX", "ORB ANNU", SPECIES_CD)) %>% #Has a weird spp. code, changing to ORB ANNU
+  arrange(YEAR, MONTH, DAY, REGION, MilSortCode) 
+
+unique(mdcBiscDemo$SPECIES_CD)
+listedSpp = c("ACR CERV", "ACR PALM", "DEN CYLI", "MYC FERO",  "ORB ANNU",  "ORB FAVE",  "ORB FRAN",  "ORB SPE.")
+
+esaOnlyDemo <- mdcBiscDemo %>%
+  filter(SPECIES_CD %in% listedSpp, N >= 1) %>%
+  group_by(SPECIES_CD, SurveyCode) %>%
+  # Keep only one row per group (for instance, the first row in each group)
+  slice(1) %>%
+  # Ungroup for further processing
+  ungroup()
+
+# Create the summary table
+esaSppByYear <- esaOnlyDemo %>%
+  # Group by YEAR and SPECIES_CD
+  group_by(YEAR, SPECIES_CD) %>%
+  # Count the occurrences of each species in each year
+  summarise(count = n(), .groups = 'drop') %>%
+  # Pivot to wide format with each species as a column
+  pivot_wider(names_from = SPECIES_CD, values_from = count, values_fill = list(count = 0))
+
+# Print the resulting dataframe
+esaSppByYear
+
+# Calculate the total number of unique surveys (MilSortCode) by year
+total_surveys_by_year <- mdcBiscDemo %>%
+  # Count unique MilSortCode by YEAR
+  group_by(YEAR) %>%
+  summarise(total_surveys = n_distinct(SurveyCode), .groups = 'drop')
+
+# Print the total number of surveys by year
+print(total_surveys_by_year)
+
+# Merge the summary table with the total number of surveys
+esaSppFOI <- esaSppByYear %>%
+  # Join with the total number of surveys
+  left_join(total_surveys_by_year, by = "YEAR") %>%
+# Calculate proportions by dividing counts by total number of surveys
+  mutate(across(where(is.numeric) & !starts_with("total_"),
+                 ~ . / total_surveys, .names = "prop_{.col}")) %>%
+  # Round the proportion columns to 2 decimal places
+  mutate(across(starts_with("prop_"), ~ round(., 2))) %>%
+  # Select only proportion columns and YEAR
+  select(YEAR, starts_with("prop_")) %>%
+  select(-prop_YEAR)
+
+# Print the resulting dataframe with proportions
+esaSppFOI
+```
+
+```{r, FOI ESA spp. chart by year}
+# Pivot data to long format
+esaSppFOI_long <- esaSppFOI %>%
+  pivot_longer(cols = starts_with("prop_"),
+               names_to = "Species",
+               values_to = "Proportion") %>%
+  # Remove the 'prop_' prefix from the Species names
+  mutate(Species = gsub("prop_", "", Species)) %>%
+  # Ensure species names are factors for consistent order
+  mutate(Species = factor(Species, levels = listedSpp))
+
+# Print the long format data for verification
+print(esaSppFOI_long)
+
+# Generate a line chart for each species
+species_list <- levels(esaSppFOI_long$Species)
+
+# Create a list to store individual plots
+plot_list <- list()
+
+# Loop through each species and create a line plot
+for (species in species_list) {
+  p <- ggplot(esaSppFOI_long %>% filter(Species == species), aes(x = YEAR, y = Proportion, group = Species, color = Species)) +
+    geom_line(size = 1) +
+    geom_point(size = 2) +
+    labs(title = paste("Proportion of", species, "by Year"),
+         x = "Year",
+         y = "Proportion of Surveys",
+         color = "Species") +
+    scale_color_manual(values = "blue") + # You can customize the color for each plot
+     scale_y_continuous(limits = c(0,0.35)) + # Set y-axis limits
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+  # Store the plot in the list
+  plot_list[[species]] <- p
+}
+
+# Print each plot
+for (p in plot_list) {
+  print(p)
+}
+
+```
+
+
+
+##For the top reef building species, what is the variance?
+CV for top ten? CVs will change per year, 
+```{r, CV top spp.}
+
+```
+
+##Change in coral cover by year
+```{r, Change in coral cover}
+mdcBiscBenthic <- allBenthic %>%
+  mutate(SurveyCode = paste(YEAR, MONTH, DAY, PRIMARY_SAMPLE_UNIT, sep = "-")) %>%
+  mutate(MilSortCode = paste(YEAR, MONTH, DAY, PRIMARY_SAMPLE_UNIT, STATION_NR, sep = "-")) %>%
+filter(SUB_REGION_NAME %in% c("Biscayne", "Broward-Miami")) %>%
+  filter(LAT_DEGREES < 25.97)  %>%
+  filter(STATION_NR == 1)  %>% #Removing any second transects at the same site
+  arrange(YEAR, MONTH, DAY, REGION, MilSortCode)
+
+unique_cover_cat_cd <- unique(mdcBiscBenthic$COVER_CAT_CD)
+
+# Define the list of hard corals
+hardCorals <- c("EUS FAST", "MON CAVE", "SID SIDE", "MEA MEAN", "POR ASTR", "STE INTE", 
+                "MYC ALIC", "DIC STOK", "AGA AGAR", "POR PORI", "POR FURC", "ACR CERV", 
+                "ORB FAVE", "PSE STRI", "POR DIVA", "COL NATA", "ORB ANNU", "SCO SPE.", 
+                "MAD DECA", "SOL BOUR", "SOL SPE.", "SID RADI", "SID SPE.", "DIP LABY")
+
+# Calculate total hard coral cover for each SurveyCode
+total_hard_coral_cover <- mdcBiscBenthic %>%
+  # Group by SurveyCode and additional columns
+  group_by(SurveyCode, REGION, PRIMARY_SAMPLE_UNIT, STATION_NR, YEAR, MONTH, DAY, HABITAT_CD, 
+            STRAT, RUGOSITY_CD, WTD_RUG, LAT_DEGREES, LON_DEGREES, MAPGRID_NR, SUB_REGION_NAME, 
+            SUB_REGION_NR, ZONE_NAME, ZONE_NR, MPA_NAME, MPA_NR, ADMIN, PROT, DEPTH_STRAT, 
+            MIN_DEPTH, MAX_DEPTH, METERS_COMPLETED) %>%
+  # Summarise the total hard coral cover
+  summarise(
+    total_hardbottom_p = sum(if_else(COVER_CAT_CD %in% hardCorals, HARDBOTTOM_P, 0), na.rm = TRUE),
+    total_softbottom_p = sum(if_else(COVER_CAT_CD %in% hardCorals, SOFTBOTTOM_P, 0), na.rm = TRUE),
+    total_rubble_p = sum(if_else(COVER_CAT_CD %in% hardCorals, RUBBLE_P, 0), na.rm = TRUE),
+    total_hard_coral_cover = total_hardbottom_p + total_softbottom_p + total_rubble_p,
+    .groups = 'drop'
+  ) %>%
+  # Ensure the data is sorted by SurveyCode
+  arrange(SurveyCode)
+
+# Print the resulting table
+print(total_hard_coral_cover)
+
+average_coral_cover_by_year <- total_hard_coral_cover %>%
+  group_by(YEAR) %>%
+  summarise(
+    avg_hard_coral_cover = mean(total_hard_coral_cover, na.rm = TRUE),
+    sd_hard_coral_cover = sd(total_hard_coral_cover, na.rm = TRUE),
+    n = n(),
+    se_hard_coral_cover = sd_hard_coral_cover / sqrt(n)
+  ) %>%
+  mutate(YEAR = as.factor(YEAR))  # Convert YEAR to a factor for plotting
+
+# Plot the average hard coral cover with error bars
+hardCoralPlot=ggplot(average_coral_cover_by_year, aes(x = YEAR, y = avg_hard_coral_cover, group=1)) +
+  geom_line(color = "blue") +  # Line plot for the average hard coral cover
+  geom_point(color = "blue") +  # Points on the line
+  geom_errorbar(aes(ymin = avg_hard_coral_cover - se_hard_coral_cover,
+                    ymax = avg_hard_coral_cover + se_hard_coral_cover),
+                width = 0.2, color = "blue") +  # Error bars
+  labs(title = "Average Hard Coral Cover by Year",
+       x = "Year",
+       y = "Average Hard Coral Cover") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels if needed
 
 ```

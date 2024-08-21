@@ -23,7 +23,7 @@ This is the code that is examining NCRMP surveys within Miami-Dade County.
 For the following analyses we will require the use of multiple different R packages, we can use the package *pacman* to quickly load them.
 ```{r, loading required packages}
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load("paletteer", "patchwork", "tidyverse", "vegan",  "dplyr", "ncrmp.benthics.analysis", "ggplot2", "sf", "maps", "ggmap", "ggspatial", "tigris")
+pacman::p_load("paletteer", "patchwork", "tidyverse", "vegan",  "dplyr", "ncrmp.benthics.analysis", "ggplot2", "sf", "maps", "ggmap", "ggspatial", "tigris", "glue")
 
 ```
 
@@ -168,7 +168,7 @@ geom_sf(data = south_florida_counties, fill = NA, color = "black") +
   geom_sf(data = mdcBiscBenthic_sf, aes(color = "Survey Sites"), size = 3) +
   geom_sf(data = biscayne_park, fill = NA, color = "green", size = 1.5, aes(linetype = "Biscayne National Park")) +  # Outline of Biscayne National Park
   geom_text(data = centroids, aes(x = X, y = Y, label = NAME), size = 3, color = "blue") +
-  labs(title = "NCRMP LPI Surveys in Miami-Dade County & Biscayne National Park",
+  labs(title = "NCRMP LPI Surveys in Miami-Dade County & Biscayne National Park from 2014-2022",
        x = "Longitude",
        y = "Latitude") +
    coord_sf(xlim = c(-84, -79), ylim = c(24, 27), expand = FALSE) +  # Set the bounding box for the map
@@ -183,14 +183,23 @@ geom_sf(data = south_florida_counties, fill = NA, color = "black") +
                         labels = c("Biscayne National Park")) +
   theme_minimal() +
   theme(
+    plot.title = element_text(hjust = 0.5, size = 14),
     legend.position = c(0.83, 0.15), 
     legend.title = element_blank()# Position legend in the bottom-right corner
     #legend.justification = c("right", "bottom"), # Justify legend to the bottom-right corner
     #legend.box.margin = margin(10, 10, 10, 10) # Add margin around the legend box
   )
 
-
 mdcBiscBenthicMap
+
+ggsave(
+  filename = "./figs/mdcBiscBenthicMap.png",    # Change the filename and extension as needed
+  plot = mdcBiscBenthicMap,              # The plot object you want to save
+  width = 12,                            # Width of the output file in inches
+  height = 8,                            # Height of the output file in inches
+  dpi = 300                              # Resolution in dots per inch
+)
+
 ```
 ###Demo
 ```{r, filter demo data}
@@ -297,7 +306,7 @@ geom_sf(data = south_florida_counties, fill = NA, color = "black") +
   geom_sf(data = mdcBiscDemoSurveys_sf, aes(color = SURVEY), size = 3) +
   geom_text(data = centroids, aes(x = X, y = Y, label = NAME), size = 3, color = "blue") +
   geom_sf(data = biscayne_park, fill = NA, color = "green", size = 1.5, aes(linetype = "Biscayne National Park")) +  # Outline of Biscayne National Park
-  labs(title = "Coral Demographic Surveys in MDC & BNP",
+  labs(title = "Coral Demographic Surveys in Miami-Dade County & Biscayne National Park from 2002-2022",
        x = "Longitude",
        y = "Latitude",
        color = "Survey Type") +
@@ -312,13 +321,22 @@ geom_sf(data = south_florida_counties, fill = NA, color = "black") +
                                 "SCREAM" = "purple"))+
   theme_minimal() +
    theme(
-    legend.position = c(0.85, 0.17), 
+    plot.title = element_text(hjust = 0.5, size = 14),
+     legend.position = c(0.85, 0.17), 
     legend.title = element_blank(),
     legend.spacing.y = unit(0.0, "cm")# Position legend in the bottom-right corner
     #legend.justification = c("right", "bottom"), # Justify legend to the bottom-right corner
     #legend.box.margin = margin(10, 10, 10, 10) # Add margin around the legend box
   )
 mdcBiscDemoSurveysMap
+
+ggsave(
+  filename = "./figs/mdcBiscDemoSurveysMap.png",    # Change the filename and extension as needed
+  plot = mdcBiscDemoSurveysMap,              # The plot object you want to save
+  width = 12,                            # Width of the output file in inches
+  height = 8,                            # Height of the output file in inches
+  dpi = 300                              # Resolution in dots per inch
+)
 
 ```
 ##Number of Surveys
@@ -366,6 +384,8 @@ mdcBiscBenthicSurveysTotal <- mdcBiscBenthicSurveysTotal %>%
   rename("lpiSurveys" = num_surveys)
 mdcBiscBenthicSurveysTotal
 
+write.csv(mdcBiscBenthicSurveysTotal, "./data/mdcBiscBenthicSurveyNumbers.csv")
+
 ```
 ###Demo
 ```{r, number of demo surveys}
@@ -405,6 +425,8 @@ totals_df <- totals_df %>%
 
 mdcBiscDemoSurveyCounts <- bind_rows(mdcBiscDemoSurveyCounts, totals_df)
 mdcBiscDemoSurveyCounts
+
+write.csv(mdcBiscDemoSurveyCounts, "./data/mdcBiscDemoSurveyCountsNumbers.csv")
 ```
 
 ##FOI in each (survey type/year?) for bleaching and for disease?
@@ -465,10 +487,12 @@ mdcBiscBleachingSummary <- bind_rows(mdcBiscBleachingSummary, total_summary)
 
 # Print the summary table
 mdcBiscBleachingSummary
+
+write.csv(mdcBiscBleachingSummary, "./data/mdcBiscBleachingSummary.csv")
 ```
 
 ```{r, FOI bleaching chart}
-# Summarize the data to include counts of surveys with and without bleaching
+# Your data preparation code (as given)
 mdcBiscBleachingSummary_stacked <- mdcBiscDemoBleachingSurveys %>%
   group_by(YEAR) %>%
   summarise(
@@ -478,34 +502,26 @@ mdcBiscBleachingSummary_stacked <- mdcBiscDemoBleachingSurveys %>%
   ) %>%
   mutate(YEAR = as.character(YEAR))
 
-# Pivot data to long format for stacking
 mdcBiscBleachingLong <- mdcBiscBleachingSummary_stacked %>%
   pivot_longer(cols = c(surveys_with_bleaching, surveys_without_bleaching),
                names_to = "BleachingStatus",
                values_to = "Count") %>%
-  # Explicitly set factor levels to ensure correct stacking order
   mutate(BleachingStatus = factor(BleachingStatus, 
                                   levels = c("surveys_with_bleaching", "surveys_without_bleaching")))
 
-# Print the long format data for verification
-print(mdcBiscBleachingLong)
-
-# Create the stacked bar chart
-mdcBiscBleachingChart <- ggplot(mdcBiscBleachingLong[order(mdcBiscBleachingLong$BleachingStatus,decreasing=F),], aes(x = YEAR, y = Count, fill = BleachingStatus)) +
+# Create the stacked bar chart without title
+mdcBiscBleachingChart <- ggplot(mdcBiscBleachingLong, aes(x = YEAR, y = Count, fill = BleachingStatus)) +
   geom_bar(stat = "identity") +
-  labs(title = "Number of Surveys with and without Coral Bleaching Incidents by Year",
-       x = "Year",
+  labs(x = "Year",
        y = "Number of Surveys",
-       fill = "Bleaching Status") +
+       fill = "Bleaching Status") +  # Set legend title
   scale_fill_manual(values = c("surveys_with_bleaching" = "darkred", 
-                                "surveys_without_bleaching" = "lightgray")) +
-  theme_minimal()
+                                "surveys_without_bleaching" = "lightgray"),
+                    labels = c("Bleaching Present", "Bleaching Absent")) +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1))  # Remove legend for the first plot
 
-# Print the chart
-print(mdcBiscBleachingChart)
-
-################################################################################
-# Summarize the data to include proportions of surveys with and without bleaching
 mdcBiscBleachingProportions <- mdcBiscDemoBleachingSurveys %>%
   group_by(YEAR) %>%
   summarise(
@@ -520,29 +536,34 @@ mdcBiscBleachingProportions <- mdcBiscDemoBleachingSurveys %>%
   select(YEAR, proportion_with_bleaching, proportion_without_bleaching) %>%
   mutate(YEAR = as.character(YEAR))
 
-# Print the summary table for verification
-print(mdcBiscBleachingProportions)
-
-# Pivot data to long format for stacking proportional data
 mdcBiscBleachingLongProportions <- mdcBiscBleachingProportions %>%
   pivot_longer(cols = c(proportion_with_bleaching, proportion_without_bleaching),
                names_to = "BleachingStatus",
                values_to = "Proportion") %>%
-  # Explicitly set factor levels to ensure correct stacking order
   mutate(BleachingStatus = factor(BleachingStatus, 
                                   levels = c("proportion_with_bleaching", "proportion_without_bleaching")))
 
-# Print the long format data for verification
-print(mdcBiscBleachingLongProportions)
-
+# Create the proportional bar chart without title
 mdcBiscBleachingProportionsChart <- ggplot(mdcBiscBleachingLongProportions, aes(x = YEAR, y = Proportion, fill = BleachingStatus)) +
   geom_bar(stat = "identity") +
-  labs(title = "Proportion of Surveys with and without Coral Bleaching Incidents by Year",
-       x = "Year",
+  labs(x = "Year",
        y = "Proportion of Surveys",
-       fill = "Bleaching Status") +
-  scale_fill_manual(values = c("proportion_with_bleaching" = "darkred", "proportion_without_bleaching" = "lightgray")) +
-  theme_minimal()
+       fill = "Bleaching Status") +  # Set legend title
+  scale_fill_manual(values = c("proportion_with_bleaching" = "darkred", 
+                                "proportion_without_bleaching" = "lightgray"),
+                    labels = c("Bleaching Present", "Bleaching Absent")) +
+  theme_minimal() +
+  theme(legend.position = "bottom",  # Place legend at the bottom
+        legend.box = "vertical",
+        legend.direction = "vertical",
+        axis.text.x = element_text(angle = 45, hjust = 1))  # Stack legend items vertically
+
+# Combine the plots using patchwork and ensure a single legend
+combinedBleachingplot <- mdcBiscBleachingChart | mdcBiscBleachingProportionsChart +
+  plot_layout(guides = "collect")  # Collect and combine legends
+
+# Save the combined plot
+ggsave("./figs/combinedBleachingplot.png", plot = combinedBleachingplot, width = 12, height = 6, units = "in")
 
 ```
 ###FOI Disease
@@ -652,34 +673,45 @@ mdcBiscDiseaseProportions <- mdcBiscDiseaseSummary_no_total %>%
 # Print data for verification
 print(mdcBiscDiseaseLong)
 print(mdcBiscDiseaseProportions)
-
-# Create the stacked bar chart for total surveys
+# Create the stacked bar chart for total surveys without legend and title
 mdcBiscDiseaseTotalChart <- ggplot(mdcBiscDiseaseLong, aes(x = YEAR, y = Count, fill = DiseaseStatus)) +
   geom_bar(stat = "identity") +
-  labs(title = "Total Surveys with and without Disease by Year",
-       x = "Year",
+  labs(x = "Year",
        y = "Number of Surveys",
-       fill = "Disease Status") +
-  scale_fill_manual(values = c("disease_present" = "darkred", 
+       fill = "Disease Status") +  # Set legend title
+  scale_fill_manual(values = c("disease_present" = "yellow", 
                                 "disease_absent" = "lightgray")) +
-  theme_minimal()
+  theme_minimal() +
+  theme(legend.position = "none",  # Remove legend
+        axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels
 
 # Print the total surveys chart
 print(mdcBiscDiseaseTotalChart)
 
-# Create the stacked bar chart for proportional data
+# Create the stacked bar chart for proportional data with updated legend and no title
 mdcBiscDiseaseProportionChart <- ggplot(mdcBiscDiseaseProportions, aes(x = YEAR, y = Proportion, fill = DiseaseStatus)) +
   geom_bar(stat = "identity") +
-  labs(title = "Proportion of Surveys with and without Disease by Year",
-       x = "Year",
+  labs(x = "Year",
        y = "Proportion of Surveys",
-       fill = "Disease Status") +
-  scale_fill_manual(values = c("proportion_disease_present" = "darkred", 
-                                "proportion_disease_absent" = "lightgray")) +
-  theme_minimal()
+       fill = "Disease Status") +  # Set legend title
+  scale_fill_manual(values = c("proportion_disease_present" = "yellow", 
+                                "proportion_disease_absent" = "lightgray"), 
+                    labels = c("Disease Present", "Disease Absent")) +
+  theme_minimal() +
+  theme(legend.position = "bottom",  # Place legend at the bottom
+        legend.direction = "vertical",  # Stack legend items vertically
+        legend.box = "vertical",  # Ensure the legend box is vertical
+        axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels
 
 # Print the proportional data chart
 print(mdcBiscDiseaseProportionChart)
+
+# Combine the plots using patchwork and ensure a single legend
+combinedDiseaseplot <- mdcBiscDiseaseTotalChart | mdcBiscDiseaseProportionChart +
+  plot_layout(guides = "collect")  # Collect and combine legends
+
+# Save the combined plot
+ggsave("./figs/combinedDiseaseplot.png", plot = combinedDiseaseplot, width = 12, height = 6, units = "in")
 
 ```
 
@@ -720,31 +752,54 @@ esaSppByYear <- esaOnlyDemo %>%
 # Print the resulting dataframe
 esaSppByYear
 
-# Calculate the total number of unique surveys (MilSortCode) by year
-total_surveys_by_year <- mdcBiscDemo %>%
-  # Count unique MilSortCode by YEAR
-  group_by(YEAR) %>%
-  summarise(total_surveys = n_distinct(SurveyCode), .groups = 'drop')
+# Define full species names
+species_names <- c(
+  "ACR CERV" = "Acropora cervicornis",
+  "ACR PALM" = "Acropora palmata",
+  "DEN CYLI" = "Dendrogyra cylindrus",
+  "MYC FERO" = "Mycetophyllia ferox",
+  "ORB ANNU" = "Orbicella annularis",
+  "ORB FAVE" = "Orbicella faveolata",
+  "ORB FRAN" = "Orbicella franksi",
+  "ORB SPE." = "Orbicella spp."
+)
+# Update species codes to full names in your dataset
+esaSppFOI_long <- esaSppFOI %>%
+  pivot_longer(cols = starts_with("prop_"),
+               names_to = "Species",
+               values_to = "Proportion") %>%
+  mutate(Species = gsub("prop_", "", Species)) %>%
+  mutate(Species = factor(Species, levels = names(species_names)),
+         Species = recode(Species, !!!species_names))  # Replace species codes with full names
 
-# Print the total number of surveys by year
-print(total_surveys_by_year)
+# Function to create plot with italicized species names in titles
+create_plot <- function(species_name) {
+  ggplot(esaSppFOI_long %>% filter(Species == species_name), aes(x = YEAR, y = Proportion, group = Species, color = Species)) +
+    geom_line(size = 1) +
+    geom_point(size = 2) +
+    labs(title = glue("**{species_name}** Presence/Absence Across Surveys"),  # Use glue for dynamic titles
+         x = "Year",
+         y = "Proportion of Surveys") +
+    scale_color_manual(values = "blue") + # Customize color if needed
+    scale_y_continuous(limits = c(0, 0.35)) + # Set y-axis limits
+    theme_minimal() +
+    theme(legend.position = "none",  # Remove legend
+          axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+          plot.title = element_text(face = "italic"))  # Italicize title
+}
 
-# Merge the summary table with the total number of surveys
-esaSppFOI <- esaSppByYear %>%
-  # Join with the total number of surveys
-  left_join(total_surveys_by_year, by = "YEAR") %>%
-# Calculate proportions by dividing counts by total number of surveys
-  mutate(across(where(is.numeric) & !starts_with("total_"),
-                 ~ . / total_surveys, .names = "prop_{.col}")) %>%
-  # Round the proportion columns to 2 decimal places
-  mutate(across(starts_with("prop_"), ~ round(., 2))) %>%
-  # Select only proportion columns and YEAR
-  select(YEAR, starts_with("prop_")) %>%
-  select(-prop_YEAR)
+# Generate individual plots
+plot_list <- lapply(species_names, function(species_name) {
+  create_plot(species_name)
+})
 
-# Print the resulting dataframe with proportions
-esaSppFOI
+# Combine all plots in a grid
+combined_plot <- wrap_plots(plot_list, ncol = 2)  # Adjust ncol for desired grid layout
+
+# Save the combined plot
+ggsave("./figs/combinedSpeciesPresenceAbsence.png", plot = combined_plot, width = 12, height = 12, units = "in")
 ```
+
 
 ```{r, FOI ESA spp. chart by year}
 # Pivot data to long format
@@ -855,10 +910,13 @@ hardCoralPlot=ggplot(average_coral_cover_by_year, aes(x = YEAR, y = avg_hard_cor
   geom_errorbar(aes(ymin = avg_hard_coral_cover - se_hard_coral_cover,
                     ymax = avg_hard_coral_cover + se_hard_coral_cover),
                 width = 0.2, color = "blue") +  # Error bars
-  labs(title = "Average Hard Coral Cover by Year",
+  labs(
        x = "Year",
-       y = "Average Hard Coral Cover") +
+       y = "Average Percent Hard Coral Cover") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels if needed
+
+ggsave(filename = "./figs/hardCoralPlot.png", plot = hardCoralPlot, width = 10, height = 6, dpi = 300)
+
 
 ```

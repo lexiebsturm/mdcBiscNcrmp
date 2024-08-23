@@ -23,7 +23,7 @@ This is the code that is examining NCRMP surveys within Miami-Dade County.
 For the following analyses we will require the use of multiple different R packages, we can use the package *pacman* to quickly load them.
 ```{r, loading required packages}
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load("paletteer", "patchwork", "tidyverse", "vegan",  "dplyr", "ncrmp.benthics.analysis", "ggplot2", "sf", "maps", "ggmap", "ggspatial", "tigris", "glue")
+pacman::p_load("paletteer", "patchwork", "tidyverse", "vegan",  "dplyr", "ncrmp.benthics.analysis", "ggplot2", "sf", "maps", "ggmap", "ggspatial", "tigris", "glue", "ggpubr", "multcomp", "ggbreak", "cowplot")
 
 ```
 
@@ -349,8 +349,6 @@ ggsave(
 ```{r, number of benthic surveys}
 # Calculate the number of unique LPI surveys per year
 mdcBiscBenthicSurveys <- mdcBiscBenthic %>%
-# Group by YEAR
-group_by(YEAR) %>%
  group_by(YEAR) %>%                     # Group by year
   summarize(num_surveys = n_distinct(PRIMARY_SAMPLE_UNIT)) %>%  # Count unique PRIMARY_SAMPLE_UNIT   
   mutate(YEAR = as.character(YEAR))  # Ensure YEAR is character
@@ -429,7 +427,7 @@ mdcBiscDemoSurveyCounts
 write.csv(mdcBiscDemoSurveyCounts, "./data/mdcBiscDemoSurveyCountsNumbers.csv")
 ```
 
-##FOI in each (survey type/year?) for bleaching and for disease?
+##Frequency of Incidence (FOI)
 ###FOI Bleaching
 ```{r, FOI bleaching Table}
 #FOI Bleaching Table
@@ -511,7 +509,7 @@ mdcBiscBleachingLong <- mdcBiscBleachingSummary_stacked %>%
 
 # Create the stacked bar chart without title
 mdcBiscBleachingChart <- ggplot(mdcBiscBleachingLong, aes(x = YEAR, y = Count, fill = BleachingStatus)) +
-  geom_bar(stat = "identity") +
+   geom_bar(stat='identity', position = position_stack(reverse = TRUE)) +
   labs(x = "Year",
        y = "Number of Surveys",
        fill = "Bleaching Status") +  # Set legend title
@@ -533,7 +531,7 @@ mdcBiscBleachingProportions <- mdcBiscDemoBleachingSurveys %>%
     proportion_with_bleaching = surveys_with_bleaching / total_surveys,
     proportion_without_bleaching = surveys_without_bleaching / total_surveys
   ) %>%
-  select(YEAR, proportion_with_bleaching, proportion_without_bleaching) %>%
+  dplyr::select(YEAR, proportion_with_bleaching, proportion_without_bleaching) %>%
   mutate(YEAR = as.character(YEAR))
 
 mdcBiscBleachingLongProportions <- mdcBiscBleachingProportions %>%
@@ -545,7 +543,7 @@ mdcBiscBleachingLongProportions <- mdcBiscBleachingProportions %>%
 
 # Create the proportional bar chart without title
 mdcBiscBleachingProportionsChart <- ggplot(mdcBiscBleachingLongProportions, aes(x = YEAR, y = Proportion, fill = BleachingStatus)) +
-  geom_bar(stat = "identity") +
+  geom_bar(stat = "identity", position = position_fill(reverse = TRUE)) +
   labs(x = "Year",
        y = "Proportion of Surveys",
        fill = "Bleaching Status") +  # Set legend title
@@ -566,6 +564,7 @@ combinedBleachingplot <- mdcBiscBleachingChart | mdcBiscBleachingProportionsChar
 ggsave("./figs/combinedBleachingplot.png", plot = combinedBleachingplot, width = 12, height = 6, units = "in")
 
 ```
+
 ###FOI Disease
 ```{r, FOI disease by year}
 mdcBiscDemo <- allDemo %>%
@@ -663,7 +662,7 @@ mdcBiscDiseaseProportions <- mdcBiscDiseaseSummary_no_total %>%
     proportion_disease_present = round(disease_present / total_surveys, 2),
     proportion_disease_absent = 1 - proportion_disease_present
   ) %>%
-  select(YEAR, proportion_disease_present, proportion_disease_absent) %>%
+  dplyr::select(YEAR, proportion_disease_present, proportion_disease_absent) %>%
   pivot_longer(cols = c(proportion_disease_present, proportion_disease_absent),
                names_to = "DiseaseStatus",
                values_to = "Proportion") %>%
@@ -675,7 +674,7 @@ print(mdcBiscDiseaseLong)
 print(mdcBiscDiseaseProportions)
 # Create the stacked bar chart for total surveys without legend and title
 mdcBiscDiseaseTotalChart <- ggplot(mdcBiscDiseaseLong, aes(x = YEAR, y = Count, fill = DiseaseStatus)) +
-  geom_bar(stat = "identity") +
+  geom_bar(stat = "identity", position = position_stack(reverse = TRUE)) +
   labs(x = "Year",
        y = "Number of Surveys",
        fill = "Disease Status") +  # Set legend title
@@ -690,7 +689,7 @@ print(mdcBiscDiseaseTotalChart)
 
 # Create the stacked bar chart for proportional data with updated legend and no title
 mdcBiscDiseaseProportionChart <- ggplot(mdcBiscDiseaseProportions, aes(x = YEAR, y = Proportion, fill = DiseaseStatus)) +
-  geom_bar(stat = "identity") +
+  geom_bar(stat = "identity", position = position_fill(reverse = TRUE)) +
   labs(x = "Year",
        y = "Proportion of Surveys",
        fill = "Disease Status") +  # Set legend title
@@ -715,83 +714,62 @@ ggsave("./figs/combinedDiseaseplot.png", plot = combinedDiseaseplot, width = 12,
 
 ```
 
-##What is the FOI for each ESA species by year?
-```{r, FOI ESA spp. by year}
+###FOI ESA-Listed Spp.
+```{r, FOI ESA spp. chart by year}
+
+# Define color palette with 8 colors
+colPal <- paletteer::paletteer_d("NineteenEightyR::youngturqs", n = 8)
+
+# Ensure your data is prepared correctly
 mdcBiscDemo <- allDemo %>%
   mutate(SurveyCode = paste(YEAR, MONTH, DAY, PRIMARY_SAMPLE_UNIT, sep = "-")) %>%
   mutate(MilSortCode = paste(YEAR, MONTH, DAY, PRIMARY_SAMPLE_UNIT, STATION_NR, sep = "-")) %>%
-filter(SUB_REGION_NAME %in% c("Biscayne", "Broward-Miami")) %>%
+  filter(SUB_REGION_NAME %in% c("Biscayne", "Broward-Miami")) %>%
   filter(LAT_DEGREES < 25.97) %>%
   mutate(
     LAT_DEGREES = round(LAT_DEGREES, 5),
     LON_DEGREES = round(LON_DEGREES, 5)
   ) %>%
-   mutate(SPECIES_CD = if_else(SPECIES_CD == "ORB ANCX", "ORB ANNU", SPECIES_CD)) %>% #Has a weird spp. code, changing to ORB ANNU
-  arrange(YEAR, MONTH, DAY, REGION, MilSortCode) 
+  mutate(SPECIES_CD = if_else(SPECIES_CD == "ORB ANCX", "ORB ANNU", SPECIES_CD)) %>%  # Correcting the species code
+  mutate(SPECIES_NAME = if_else(SPECIES_NAME == "Orbicella annularis species complex", "Orbicella annularis", SPECIES_NAME)) %>%  # Correcting the species name
+  arrange(YEAR, MONTH, DAY, REGION, MilSortCode)
 
-unique(mdcBiscDemo$SPECIES_CD)
-listedSpp = c("ACR CERV", "ACR PALM", "DEN CYLI", "MYC FERO",  "ORB ANNU",  "ORB FAVE",  "ORB FRAN",  "ORB SPE.")
+# Define the species of interest
+listedSpp <- c("Acropora cervicornis", "Acropora palmata", "Dendrogyra cylindrus", 
+               "Mycetophyllia ferox", "Orbicella annularis", "Orbicella faveolata", 
+               "Orbicella franksi", "Orbicella spp")
 
+# Filter and summarize data
 esaOnlyDemo <- mdcBiscDemo %>%
-  filter(SPECIES_CD %in% listedSpp, N >= 1) %>%
-  group_by(SPECIES_CD, SurveyCode) %>%
-  # Keep only one row per group (for instance, the first row in each group)
-  slice(1) %>%
-  # Ungroup for further processing
-  ungroup()
-
-# Create the summary table
-esaSppByYear <- esaOnlyDemo %>%
-  # Group by YEAR and SPECIES_CD
-  group_by(YEAR, SPECIES_CD) %>%
-  # Count the occurrences of each species in each year
+  filter(SPECIES_NAME %in% listedSpp, N >= 1) %>%
+  group_by(SPECIES_NAME, YEAR) %>%
   summarise(count = n(), .groups = 'drop') %>%
-  # Pivot to wide format with each species as a column
-  pivot_wider(names_from = SPECIES_CD, values_from = count, values_fill = list(count = 0))
+  pivot_wider(names_from = SPECIES_NAME, values_from = count, values_fill = list(count = 0))
 
-# Print the resulting dataframe
-esaSppByYear
-
-# Define full species names
-species_names <- c(
-  "ACR CERV" = "Acropora cervicornis",
-  "ACR PALM" = "Acropora palmata",
-  "DEN CYLI" = "Dendrogyra cylindrus",
-  "MYC FERO" = "Mycetophyllia ferox",
-  "ORB ANNU" = "Orbicella annularis",
-  "ORB FAVE" = "Orbicella faveolata",
-  "ORB FRAN" = "Orbicella franksi",
-  "ORB SPE." = "Orbicella spp."
-)
-# Update species codes to full names in your dataset
-esaSppFOI_long <- esaSppFOI %>%
-  pivot_longer(cols = starts_with("prop_"),
-               names_to = "Species",
-               values_to = "Proportion") %>%
-  mutate(Species = gsub("prop_", "", Species)) %>%
-  mutate(Species = factor(Species, levels = names(species_names)),
-         Species = recode(Species, !!!species_names))  # Replace species codes with full names
+# Convert to long format for plotting
+esaSppFOI_long <- esaOnlyDemo %>%
+  pivot_longer(cols = -YEAR, names_to = "Species", values_to = "Count") %>%
+  mutate(Species = factor(Species, levels = listedSpp))  # Ensure correct order
 
 # Function to create plot with italicized species names in titles
-create_plot <- function(species_name) {
-  ggplot(esaSppFOI_long %>% filter(Species == species_name), aes(x = YEAR, y = Proportion, group = Species, color = Species)) +
+create_plot <- function(species_name, color) {
+  ggplot(esaSppFOI_long %>% filter(Species == species_name), aes(x = YEAR, y = Count, group = Species, color = Species)) +
     geom_line(size = 1) +
     geom_point(size = 2) +
-    labs(title = glue("**{species_name}** Presence/Absence Across Surveys"),  # Use glue for dynamic titles
+    labs(title = glue("{species_name}"),  # Use glue for dynamic titles
          x = "Year",
-         y = "Proportion of Surveys") +
-    scale_color_manual(values = "blue") + # Customize color if needed
-    scale_y_continuous(limits = c(0, 0.35)) + # Set y-axis limits
+         y = "Count of Surveys") +
+    scale_color_manual(values = color) +  # Use the assigned color
     theme_minimal() +
     theme(legend.position = "none",  # Remove legend
           axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
           plot.title = element_text(face = "italic"))  # Italicize title
 }
 
-# Generate individual plots
-plot_list <- lapply(species_names, function(species_name) {
-  create_plot(species_name)
-})
+# Generate individual plots with rotated colors
+plot_list <- Map(function(species_name, color) {
+  create_plot(species_name, color)
+}, listedSpp, colPal)  # Map each species to a color
 
 # Combine all plots in a grid
 combined_plot <- wrap_plots(plot_list, ncol = 2)  # Adjust ncol for desired grid layout
@@ -800,123 +778,296 @@ combined_plot <- wrap_plots(plot_list, ncol = 2)  # Adjust ncol for desired grid
 ggsave("./figs/combinedSpeciesPresenceAbsence.png", plot = combined_plot, width = 12, height = 12, units = "in")
 ```
 
+##Disease & Bleaching Prevalence
+```{r, disease prev}
+#drmScreamDis=DRM_SCREAM_FL_1999_13_dis_prev_site
+#Reading this package in wasn't working :(
 
-```{r, FOI ESA spp. chart by year}
-# Pivot data to long format
-esaSppFOI_long <- esaSppFOI %>%
-  pivot_longer(cols = starts_with("prop_"),
-               names_to = "Species",
-               values_to = "Proportion") %>%
-  # Remove the 'prop_' prefix from the Species names
-  mutate(Species = gsub("prop_", "", Species)) %>%
-  # Ensure species names are factors for consistent order
-  mutate(Species = factor(Species, levels = listedSpp))
+sefcriDisBle=NCRMP_DRM_SEFCRI_2014_22_dis_ble_prev_site
+flkDisBle=NCRMP_DRM_FLK_2014_22_dis_ble_prev_site
+flDisBle <- bind_rows(
+  sefcriDisBle,
+  flkDisBle
+)
 
-# Print the long format data for verification
-print(esaSppFOI_long)
-
-# Generate a line chart for each species
-species_list <- levels(esaSppFOI_long$Species)
-
-# Create a list to store individual plots
-plot_list <- list()
-
-# Loop through each species and create a line plot
-for (species in species_list) {
-  p <- ggplot(esaSppFOI_long %>% filter(Species == species), aes(x = YEAR, y = Proportion, group = Species, color = Species)) +
-    geom_line(size = 1) +
-    geom_point(size = 2) +
-    labs(title = paste("Proportion of", species, "by Year"),
-         x = "Year",
-         y = "Proportion of Surveys",
-         color = "Species") +
-    scale_color_manual(values = "blue") + # You can customize the color for each plot
-     scale_y_continuous(limits = c(0,0.35)) + # Set y-axis limits
-    theme_minimal() +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1))
-  
-  # Store the plot in the list
-  plot_list[[species]] <- p
-}
-
-# Print each plot
-for (p in plot_list) {
-  print(p)
-}
-
-```
-
-
-
-##For the top reef building species, what is the variance?
-CV for top ten? CVs will change per year, 
-```{r, CV top spp.}
-
-```
-
-##Change in coral cover by year
-```{r, Change in coral cover}
-mdcBiscBenthic <- allBenthic %>%
-  mutate(SurveyCode = paste(YEAR, MONTH, DAY, PRIMARY_SAMPLE_UNIT, sep = "-")) %>%
-  mutate(MilSortCode = paste(YEAR, MONTH, DAY, PRIMARY_SAMPLE_UNIT, STATION_NR, sep = "-")) %>%
+mdcBiscDisBle=flDisBle %>%
 filter(SUB_REGION_NAME %in% c("Biscayne", "Broward-Miami")) %>%
-  filter(LAT_DEGREES < 25.97)  %>%
-  filter(STATION_NR == 1)  %>% #Removing any second transects at the same site
-  arrange(YEAR, MONTH, DAY, REGION, MilSortCode)
+  filter(LAT_DEGREES < 25.97)
 
-unique_cover_cat_cd <- unique(mdcBiscBenthic$COVER_CAT_CD)
-
-# Define the list of hard corals
-hardCorals <- c("EUS FAST", "MON CAVE", "SID SIDE", "MEA MEAN", "POR ASTR", "STE INTE", 
-                "MYC ALIC", "DIC STOK", "AGA AGAR", "POR PORI", "POR FURC", "ACR CERV", 
-                "ORB FAVE", "PSE STRI", "POR DIVA", "COL NATA", "ORB ANNU", "SCO SPE.", 
-                "MAD DECA", "SOL BOUR", "SOL SPE.", "SID RADI", "SID SPE.", "DIP LABY")
-
-# Calculate total hard coral cover for each SurveyCode
-total_hard_coral_cover <- mdcBiscBenthic %>%
-  # Group by SurveyCode and additional columns
-  group_by(SurveyCode, REGION, PRIMARY_SAMPLE_UNIT, STATION_NR, YEAR, MONTH, DAY, HABITAT_CD, 
-            STRAT, RUGOSITY_CD, WTD_RUG, LAT_DEGREES, LON_DEGREES, MAPGRID_NR, SUB_REGION_NAME, 
-            SUB_REGION_NR, ZONE_NAME, ZONE_NR, MPA_NAME, MPA_NR, ADMIN, PROT, DEPTH_STRAT, 
-            MIN_DEPTH, MAX_DEPTH, METERS_COMPLETED) %>%
-  # Summarise the total hard coral cover
-  summarise(
-    total_hardbottom_p = sum(if_else(COVER_CAT_CD %in% hardCorals, HARDBOTTOM_P, 0), na.rm = TRUE),
-    total_softbottom_p = sum(if_else(COVER_CAT_CD %in% hardCorals, SOFTBOTTOM_P, 0), na.rm = TRUE),
-    total_rubble_p = sum(if_else(COVER_CAT_CD %in% hardCorals, RUBBLE_P, 0), na.rm = TRUE),
-    total_hard_coral_cover = total_hardbottom_p + total_softbottom_p + total_rubble_p,
-    .groups = 'drop'
-  ) %>%
-  # Ensure the data is sorted by SurveyCode
-  arrange(SurveyCode)
-
-# Print the resulting table
-print(total_hard_coral_cover)
-
-average_coral_cover_by_year <- total_hard_coral_cover %>%
+# Calculate average and standard error for DIS_PREV and BLE_PREV by year
+summary_stats <- mdcBiscDisBle %>%
   group_by(YEAR) %>%
-  summarise(
-    avg_hard_coral_cover = mean(total_hard_coral_cover, na.rm = TRUE),
-    sd_hard_coral_cover = sd(total_hard_coral_cover, na.rm = TRUE),
-    n = n(),
-    se_hard_coral_cover = sd_hard_coral_cover / sqrt(n)
-  ) %>%
-  mutate(YEAR = as.factor(YEAR))  # Convert YEAR to a factor for plotting
+  summarize(
+    avg_DIS_PREV = mean(DIS_PREV, na.rm = TRUE),
+    se_DIS_PREV = sd(DIS_PREV, na.rm = TRUE) / sqrt(n()),
+    avg_BLE_PREV = mean(BLE_PREV, na.rm = TRUE),
+    se_BLE_PREV = sd(BLE_PREV, na.rm = TRUE) / sqrt(n()),
+    .groups = 'drop'
+  )
 
-# Plot the average hard coral cover with error bars
-hardCoralPlot=ggplot(average_coral_cover_by_year, aes(x = YEAR, y = avg_hard_coral_cover, group=1)) +
-  geom_line(color = "blue") +  # Line plot for the average hard coral cover
-  geom_point(color = "blue") +  # Points on the line
-  geom_errorbar(aes(ymin = avg_hard_coral_cover - se_hard_coral_cover,
-                    ymax = avg_hard_coral_cover + se_hard_coral_cover),
-                width = 0.2, color = "blue") +  # Error bars
-  labs(
-       x = "Year",
-       y = "Average Percent Hard Coral Cover") +
+# Create a plot for Disease Prevalence (DIS_PREV)
+plot_dis_prev <- ggplot(summary_stats, aes(x = YEAR, y = avg_DIS_PREV)) +
+  geom_line(color = "yellow", size = 1) +
+  geom_point(color = "yellow", size = 2) +
+  geom_errorbar(aes(ymin = avg_DIS_PREV - se_DIS_PREV, ymax = avg_DIS_PREV + se_DIS_PREV), width = 0.2, color = "yellow") +
+  labs(x = "Year", y = "Average Disease Prevalence") +
+  ggtitle("Disease Prevalence") +
   theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels if needed
+  theme(plot.title = element_text(hjust = 0.5))+
+  coord_cartesian(ylim = c(0, NA))  # Ensure y-axis starts at 0
 
-ggsave(filename = "./figs/hardCoralPlot.png", plot = hardCoralPlot, width = 10, height = 6, dpi = 300)
+# Create a plot for Bleaching Prevalence (BLE_PREV)
+plot_ble_prev <- ggplot(summary_stats, aes(x = YEAR, y = avg_BLE_PREV)) +
+  geom_line(color = "darkred", size = 1) +
+  geom_point(color = "darkred", size = 2) +
+  geom_errorbar(aes(ymin = avg_BLE_PREV - se_BLE_PREV, ymax = avg_BLE_PREV + se_BLE_PREV), width = 0.2, color = "darkred") +
+  labs(x = "Year", y = "Average Bleaching Prevalence") +
+  ggtitle("Bleaching Prevalence") +
+  theme_minimal() +
+   theme(plot.title = element_text(hjust = 0.5))+
+  coord_cartesian(ylim = c(0, NA))  # Ensure y-axis starts at 0
 
+# Combine the plots using patchwork
+combined_plot <- plot_dis_prev | plot_ble_prev
+
+# Save the combined plot
+ggsave("./figs/combined_prevalence_plot.png", plot = combined_plot, width = 12, height = 6, units = "in")
+
+```
+
+
+##Coral Density
+CV for top ten? CVs will change per year, 
+```{r, density top spp.}
+DRM_SCREAM_FL_1999_13_density_species
+NCRMP_FLK_2014_22_density_species
+NCRMP_SEFCRI_2014_22_density_species
+
+combined_density_species <- bind_rows(
+  DRM_SCREAM_FL_1999_13_density_species,
+  NCRMP_FLK_2014_22_density_species,
+  NCRMP_SEFCRI_2014_22_density_species
+)
+
+mdcBiscDensity <- combined_density_species %>%
+  filter(SUB_REGION_NAME %in% c("Biscayne", "SEFCRI"),
+         LAT_DEGREES < 25.97)
+
+# Calculate total density for each species
+species_total_density <- mdcBiscDensity %>%
+  group_by(SPECIES_NAME) %>%
+  summarize(
+    total_density = sum(DENSITY, na.rm = TRUE),  # Replace DENSITY with the actual column name if different
+    .groups = 'drop'
+  )
+
+# Identify the top 10 species with the highest total density
+top_10_species <- species_total_density %>%
+  arrange(desc(total_density)) %>%
+  head(10)
+
+# View the top 10 species
+print(top_10_species)
+
+top_species <- c(
+  "Siderastrea siderea",
+  "Porites astreoides",
+  "Porites porites",
+  "Agaricia agaricites",
+  "Stephanocoenia intersepta",
+  "Siderastrea radians",
+  "Porites furcata",
+  "Montastraea cavernosa",
+  "Porites divaricata",
+  "Orbicella faveolata"  # Added this species as it was listed without a density
+)
+
+# Filter data for the top 9 species
+filtered_data <- filter(mdcBiscDensity, SPECIES_NAME %in% top_species)
+
+# Calculate average density and standard error for each year and species
+summary_stats <- filtered_data %>%
+  group_by(YEAR, SPECIES_NAME) %>%
+  summarize(
+    average_Density = mean(DENSITY, na.rm = TRUE),  # Replace DENSITY with the correct column name if needed
+    se_Density = sd(DENSITY, na.rm = TRUE) / sqrt(n()),  # Standard error calculation
+    .groups = 'drop'
+  )
+
+# View the summary statistics to check the result
+print(summary_stats)
+
+# Get color palette with 10 colors
+colPal <- paletteer::paletteer_d("NineteenEightyR::youngturqs", n = 10)
+
+# Create a list to store plots
+plots <- list()
+
+# Generate plots for each species
+for (species_name in top_species) {
+  species_data <- filter(summary_stats, SPECIES_NAME == species_name)
+  
+  plot <- ggplot(species_data, aes(x = YEAR, y = average_Density, group = SPECIES_NAME)) +
+    geom_line(color = colPal[which(top_species == species_name)], size = 1) +
+    geom_point(color = colPal[which(top_species == species_name)], size = 2) +
+    geom_errorbar(aes(ymin = average_Density - se_Density,
+                      ymax = average_Density + se_Density),
+                  width = 0.2, color = colPal[which(top_species == species_name)]) +
+    labs(x = "Year",
+         y = "Average Density") +
+    ggtitle(species_name) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          plot.title = element_text(hjust = 0.5)) +  # Center title
+    coord_cartesian(ylim = c(0, NA))  # Ensure y-axis starts at 0
+  plots[[species_name]] <- plot
+}
+
+# Combine the plots using patchwork
+combined_plot <- wrap_plots(plots, ncol = 5)  # Arrange in 5 columns
+
+# Save the final plot
+ggsave("./figs/combined_density_plot.png", plot = combined_plot, width = 15, height = 10, units = "in")
+
+```
+
+##Change in benthic cover
+```{r, Change in cover}
+sefcriCoverSite=NCRMP_SEFCRI_2014_22_percent_cover_site #I think this is what I want
+flkCoverSite=NCRMP_FLK_2014_22_percent_cover_site
+# Combine and filter data
+mdcBiscCover <- bind_rows(sefcriCoverSite, flkCoverSite) %>%
+  filter(SUB_REGION_NAME %in% c("Biscayne", "Broward-Miami")) %>%
+  filter(LAT_DEGREES < 25.97)
+
+# Prepare data for all cover groups
+cover_data <- mdcBiscCover %>%
+  filter(cover_group %in% c("HARD CORALS", "MACROALGAE", "TURF ALGAE")) %>%
+  dplyr::select(YEAR, cover_group, Percent_Cvr) %>%
+  mutate(YEAR = as.factor(YEAR))  # Convert YEAR to a factor
+
+# Calculate averages and standard errors for each cover group
+average_cover <- cover_data %>%
+  group_by(YEAR, cover_group) %>%
+  summarise(
+    average_Percent_Cvr = mean(Percent_Cvr, na.rm = TRUE),
+    sd_Percent_Cvr = sd(Percent_Cvr, na.rm = TRUE),
+    n = n(),
+    se_Percent_Cvr = sd_Percent_Cvr / sqrt(n)  # Standard error
+  )
+
+# Perform ANOVA for each cover group
+anova_results <- list()
+for (group in unique(cover_data$cover_group)) {
+  anova_results[[group]] <- aov(Percent_Cvr ~ YEAR, data = filter(cover_data, cover_group == group))
+}
+
+# Tukey's HSD post-hoc test
+tukey_results <- list()
+for (group in names(anova_results)) {
+  tukey_results[[group]] <- TukeyHSD(anova_results[[group]])
+  print(tukey_results[[group]])
+}
+
+# Define colors for each cover group
+color_map <- c("HARD CORALS" = "blue", "MACROALGAE" = "green", "TURF ALGAE" = "brown")
+
+# Create plots for each cover group with lines and error bars
+
+# Ensure data is properly prepared
+mdcBiscCover <- mdcBiscCover %>%
+  filter(cover_group %in% c("HARD CORALS", "MACROALGAE", "TURF ALGAE")) %>%
+  group_by(YEAR, cover_group) %>%
+  summarise(
+    average_Percent_Cvr = mean(Percent_Cvr, na.rm = TRUE),
+    se_Percent_Cvr = sd(Percent_Cvr, na.rm = TRUE) / sqrt(n()),
+    .groups = "drop"
+  )
+
+# Define the common y-axis limits (if you want to use the same limit for all plots)
+y_axis_limits <- c(0, NA)  # NA allows the upper limit to be automatically determined
+
+# Plot for HARD CORALS
+plot_coral <- ggplot(filter(mdcBiscCover, cover_group == "HARD CORALS"), aes(x = YEAR, y = average_Percent_Cvr, group = cover_group)) +
+  geom_line(color = color_map["HARD CORALS"], size = 1) +
+  geom_point(color = color_map["HARD CORALS"], size = 2) +
+  geom_errorbar(aes(ymin = average_Percent_Cvr - se_Percent_Cvr,
+                    ymax = average_Percent_Cvr + se_Percent_Cvr),
+                width = 0.2, color = color_map["HARD CORALS"]) +
+  labs(x = "Year",
+       y = "Average Percent Cover") +
+  ggtitle("Hard Coral") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), 
+        plot.title = element_text(hjust = 0.5)) +  # Center title
+  coord_cartesian(ylim = y_axis_limits)
+
+# Define the common y-axis limits (if you want to use the same limit for all plots)
+y_axis_limits <- c(0, NA)  # NA allows the upper limit to be automatically determined
+
+# Plot for MACROALGAE
+plot_macroalgae <- ggplot(filter(mdcBiscCover, cover_group == "MACROALGAE"), aes(x = YEAR, y = average_Percent_Cvr, group = cover_group)) +
+  geom_line(color = color_map["MACROALGAE"], size = 1) +
+  geom_point(color = color_map["MACROALGAE"], size = 2) +
+  geom_errorbar(aes(ymin = average_Percent_Cvr - se_Percent_Cvr,
+                    ymax = average_Percent_Cvr + se_Percent_Cvr),
+                width = 0.2, color = color_map["MACROALGAE"]) +
+  labs(x = "Year",
+       y = "Average Percent Cover") +
+  ggtitle("Macroalgae") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5)) +  # Center title
+  coord_cartesian(ylim = y_axis_limits)
+
+# Define the common y-axis limits (if you want to use the same limit for all plots)
+y_axis_limits <- c(0, NA)  # NA allows the upper limit to be automatically determined
+
+# Plot for TURF ALGAE
+plot_turf_algae <- ggplot(filter(mdcBiscCover, cover_group == "TURF ALGAE"), aes(x = YEAR, y = average_Percent_Cvr, group = cover_group)) +
+  geom_line(color = color_map["TURF ALGAE"], size = 1) +
+  geom_point(color = color_map["TURF ALGAE"], size = 2) +
+  geom_errorbar(aes(ymin = average_Percent_Cvr - se_Percent_Cvr,
+                    ymax = average_Percent_Cvr + se_Percent_Cvr),
+                width = 0.2, color = color_map["TURF ALGAE"]) +
+  labs(x = "Year",
+       y = "Average Percent Cover") +
+  ggtitle("Turf Algae") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5)) +  # Center title
+  coord_cartesian(ylim = y_axis_limits)
+
+# Combine the plots using patchwork
+combined_plot <- (plot_coral | plot_macroalgae | plot_turf_algae) +
+  plot_layout(guides = "collect")
+
+# Save the final plot
+ggsave("./figs/combined_cover_plot.png", plot = combined_plot, width = 16, height = 6, units = "in")
+
+
+```
+
+##Data testing
+Testing number of surveys because I am getting a mismatch from the two datasets, one is missing PRIMARY_SAMPLE_UNIT 1121, survey 10/21/16, 25.6212	-80.0938. Turns out this one has mostly NA's so maybe was removed down the line?
+```{r, dataTesting}
+mdcBiscBenthicSummary <- mdcBiscBenthic %>%
+   mutate(
+    LAT_DEGREES = round(LAT_DEGREES, 4),   # Round LAT_DEGREES to 4 decimal places
+    LON_DEGREES = round(LON_DEGREES, 4))%>%    # Round LON_DEGREES to 4 decimal places
+  distinct(PRIMARY_SAMPLE_UNIT, YEAR, MONTH, DAY, LAT_DEGREES, LON_DEGREES)%>%
+  arrange(PRIMARY_SAMPLE_UNIT) %>%
+    mutate(LAT_DEGREES = as.character(LAT_DEGREES))%>%
+    mutate(LON_DEGREES = as.character(LON_DEGREES))
+
+write.csv(mdcBiscBenthicSummary, "./data/mdcBiscBenthicSummary.csv")
+
+mdcBiscCoverSummary<- mdcBiscCover %>%
+  distinct(PRIMARY_SAMPLE_UNIT, LAT_DEGREES, LON_DEGREES)%>%
+  arrange(PRIMARY_SAMPLE_UNIT) %>%
+    mutate(LAT_DEGREES = as.character(LAT_DEGREES))%>%
+    mutate(LON_DEGREES = as.character(LON_DEGREES))
+
+write.csv(mdcBiscCoverSummary, "./data/mdcBiscCoverSummary.csv")
 
 ```
